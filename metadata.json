@@ -1,0 +1,6 @@
+{
+  "name": "Nested Flow Card Directory",
+  "description": "Interactive developer architecture & stack directory featuring nested popping cards and seamless animated connection flows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
