@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Upload, Sparkles, BookOpen, Loader2 } from 'lucide-react';
 import { StudyModuleNode } from '../types';
+import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 interface UploadModuleModalProps {
   isOpen: boolean;
@@ -60,19 +64,43 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     setErrorMsg('');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      setRawText(content);
-      if (!courseTitle) {
-        setCourseTitle(file.name.replace(/\.[^/.]+$/, ''));
+    if (!courseTitle) {
+      setCourseTitle(file.name.replace(/\.[^/.]+$/, ''));
+    }
+    setErrorMsg('');
+
+    try {
+      let content = '';
+      const lowerName = file.name.toLowerCase();
+
+      if (lowerName.endsWith('.pdf')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          content += textContent.items.map((s: any) => s.str).join(' ') + '\n';
+        }
+      } else if (lowerName.endsWith('.docx')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        content = result.value;
+      } else if (lowerName.endsWith('.doc')) {
+        alert('Warning: .doc files are a legacy binary format and might not parse correctly. Please convert to .docx or .pdf for best results.');
+        content = await file.text();
+      } else {
+        content = await file.text();
       }
-    };
-    reader.readAsText(file);
+
+      setRawText(content);
+    } catch (err: any) {
+      console.error('Error parsing file:', err);
+      setErrorMsg('Failed to parse document: ' + err.message);
+    }
   };
 
   const handleProcessModule = async () => {
@@ -352,12 +380,12 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
             {/* File Drop / Upload */}
             <div>
               <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                UPLOAD NOTES FILE (.txt, .md, .pdf, .json)
+                UPLOAD NOTES FILE (.txt, .md, .pdf, .docx)
               </label>
               <div className="relative border-2 border-dashed border-slate-300 hover:border-purple-600 rounded-xl p-4 text-center bg-slate-50 transition-colors">
                 <input
                   type="file"
-                  accept=".txt,.md,.json,.pdf"
+                  accept=".txt,.md,.json,.pdf,.doc,.docx"
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
@@ -366,7 +394,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
                   Drop course material file here or click to browse
                 </p>
                 <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                  Markdown, text notes, syllabus, or lecture slides
+                  Markdown, text notes, syllabus, PDF, or Word Docs (.docx)
                 </p>
               </div>
             </div>
