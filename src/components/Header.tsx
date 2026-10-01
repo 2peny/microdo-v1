@@ -43,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     return null;
   };
-  
+
   const bonus = getArchetypeBonus(currentUser?.archetype);
 
   return (
@@ -59,9 +59,6 @@ export const Header: React.FC<HeaderProps> = ({
             <Layers className="w-3.5 h-3.5" />
           </div>
           <span className="font-mono tracking-tight font-extrabold text-slate-900">MicroDo</span>
-          <span className="hidden sm:inline text-slate-400 font-normal text-xs font-mono">
-            / interactive directory
-          </span>
         </button>
       </div>
 

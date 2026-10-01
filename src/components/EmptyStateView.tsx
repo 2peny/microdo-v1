@@ -35,10 +35,6 @@ export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
       className="w-full max-w-4xl mx-auto flex flex-col items-center text-center py-6 px-4"
     >
       {/* Top Badge */}
-      <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-xs font-mono mb-5 shadow-xs">
-        <Compass className="w-3.5 h-3.5" />
-        <span>SPEC-DRIVEN PROGRESSIVE STUDY ARCHITECTURE</span>
-      </div>
 
       {/* Main Title & Subtitle */}
       <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight font-sans max-w-2xl">
