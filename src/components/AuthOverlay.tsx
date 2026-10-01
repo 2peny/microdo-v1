@@ -56,7 +56,6 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
-  const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
