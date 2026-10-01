@@ -1,21 +1,31 @@
 import React from 'react';
-import { BookOpen, Upload, RotateCcw, Layers } from 'lucide-react';
+import { Upload, RotateCcw, Layers } from 'lucide-react';
+import { ProgressOverview } from './ProgressOverview';
+import { StudyModuleNode } from '../types';
 
 interface HeaderProps {
   courseName: string;
+  totalArtifactsCount: number;
+  completedArtifactsCount: number;
+  modules?: StudyModuleNode[];
+  completedArtifactIds?: string[];
+  onSelectModule?: (moduleId: string) => void;
   onOpenUploadModal: () => void;
-  onOpenGuide: () => void;
   onResetFlow: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   courseName,
+  totalArtifactsCount,
+  completedArtifactsCount,
+  modules,
+  completedArtifactIds,
+  onSelectModule,
   onOpenUploadModal,
-  onOpenGuide,
   onResetFlow,
 }) => {
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white px-6 py-2.5 flex items-center justify-between shadow-xs">
+    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white px-4 sm:px-6 py-2.5 flex items-center justify-between shadow-xs gap-3">
       {/* Left: Wordmark / Brand */}
       <div className="flex items-center gap-3">
         <button
@@ -34,14 +44,24 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Centre: Dynamic current course name */}
-      <div className="hidden sm:flex items-center justify-center text-center">
-        <h1 className="text-sm font-semibold text-slate-800 tracking-tight font-sans truncate max-w-md">
+      <div className="hidden lg:flex items-center justify-center text-center">
+        <h1 className="text-xs font-semibold text-slate-700 tracking-tight font-sans truncate max-w-xs xl:max-w-sm">
           {courseName}
         </h1>
       </div>
 
-      {/* Right: Actions */}
-      <div className="flex items-center gap-2">
+      {/* Right: Progress Overview & Actions */}
+      <div className="flex items-center gap-2 sm:gap-2.5">
+        <ProgressOverview
+          completedCount={completedArtifactsCount}
+          totalCount={totalArtifactsCount}
+          modules={modules}
+          completedArtifactIds={completedArtifactIds}
+          onSelectModule={onSelectModule}
+        />
+
+        <div className="h-4 w-px bg-slate-200 hidden sm:block mx-0.5" />
+
         <button
           onClick={onResetFlow}
           className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 border border-slate-200 transition-colors cursor-pointer shadow-xs"
@@ -52,19 +72,12 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <button
-          onClick={onOpenGuide}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 transition-colors text-xs font-mono cursor-pointer whitespace-nowrap shadow-xs"
-        >
-          <BookOpen className="w-3.5 h-3.5 text-slate-500" />
-          <span>How It Works</span>
-        </button>
-
-        <button
           onClick={onOpenUploadModal}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium font-sans transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium font-sans transition-colors cursor-pointer shadow-xs whitespace-nowrap"
         >
           <Upload className="w-3.5 h-3.5" />
-          <span>Upload Module</span>
+          <span className="hidden sm:inline">Upload Module</span>
+          <span className="sm:hidden">Upload</span>
         </button>
       </div>
     </header>

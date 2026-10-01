@@ -5,8 +5,29 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
 
+// Parse CLI arguments (--port 3000 --host 0.0.0.0) or fallback to environment variables
+const args = process.argv.slice(2);
+let cliPort: number | undefined;
+let cliHost: string | undefined;
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--port' && args[i + 1]) {
+    cliPort = parseInt(args[i + 1], 10);
+    i++;
+  } else if (args[i].startsWith('--port=')) {
+    cliPort = parseInt(args[i].split('=')[1], 10);
+  } else if (args[i] === '--host' && args[i + 1]) {
+    cliHost = args[i + 1];
+    i++;
+  } else if (args[i].startsWith('--host=')) {
+    cliHost = args[i].split('=')[1];
+  }
+}
+
+const PORT = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
+const HOST = cliHost || process.env.HOST || '0.0.0.0';
+
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static('public'));
@@ -109,16 +130,23 @@ ${rawText.slice(0, 15000)}
 });
 
 async function startServer() {
-  // Mount Vite middleware in dev
+  const isHmrDisabled = process.env.DISABLE_HMR === 'true';
+
+  // Mount Vite middleware in dev with allowedHosts: true for Cloud Run/AI Studio preview
   const vite = await createViteServer({
-    server: { middlewareMode: true },
+    server: {
+      middlewareMode: true,
+      allowedHosts: true as const,
+      hmr: isHmrDisabled ? false : undefined,
+      watch: isHmrDisabled ? null : {},
+    },
     appType: 'spa',
   });
 
   app.use(vite.middlewares);
 
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  app.listen(Number(PORT), HOST, () => {
+    console.log(`Server running on http://${HOST}:${PORT}`);
   });
 }
 

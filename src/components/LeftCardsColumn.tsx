@@ -1,13 +1,21 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { StudyModuleNode } from '../types';
-import { BookOpen, Clock, CheckCircle2, ChevronRight } from 'lucide-react';
+import { BookOpen, Clock, CheckCircle2, ChevronRight, SearchX } from 'lucide-react';
+import { ModuleProgressDashboard } from './ModuleProgressDashboard';
+import { EmptyStateView } from './EmptyStateView';
 
 interface LeftCardsColumnProps {
   modules: StudyModuleNode[];
   selectedModuleId: string | null;
   onSelectModule: (id: string) => void;
   isRailMode: boolean;
+  completedArtifactIds?: string[];
+  onOpenUploadModal?: () => void;
+  onLoadSampleCourse?: () => void;
+  onOpenFaq?: () => void;
+  hasAnyModules?: boolean;
+  onClearSearch?: () => void;
 }
 
 export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
@@ -15,6 +23,12 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
   selectedModuleId,
   onSelectModule,
   isRailMode,
+  completedArtifactIds = [],
+  onOpenUploadModal,
+  onLoadSampleCourse,
+  onOpenFaq,
+  hasAnyModules = true,
+  onClearSearch,
 }) => {
   // 1. RAIL MODE (When a module is selected): Narrow vertical left sidebar
   if (isRailMode) {
@@ -55,12 +69,20 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
                   <span className="font-mono text-[11px] font-semibold text-purple-700 truncate">
                     {mod.prefix}
                   </span>
-                  {isSelected && (
-                    <span className="flex items-center gap-1 text-[10px] font-mono text-purple-700 font-semibold shrink-0">
-                      <CheckCircle2 className="w-3 h-3 text-purple-600" />
-                      <span>Selected</span>
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <ModuleProgressDashboard
+                      module={mod}
+                      completedArtifactIds={completedArtifactIds}
+                      size="sm"
+                      showDetails={false}
+                    />
+                    {isSelected && (
+                      <span className="flex items-center gap-1 text-[10px] font-mono text-purple-700 font-semibold shrink-0">
+                        <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                        <span>Active</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <h3 className="text-xs font-bold text-slate-900 leading-snug line-clamp-1">
@@ -82,7 +104,42 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
     );
   }
 
-  // 2. GRID MODE (Initial Screen): Clean 2-column responsive directory
+  // 2. GRID MODE (Initial Screen)
+  // If there are no modules in the course, render the Empty State onboarding view
+  if (!hasAnyModules) {
+    return (
+      <EmptyStateView
+        onOpenUploadModal={onOpenUploadModal || (() => {})}
+        onLoadSampleCourse={onLoadSampleCourse || (() => {})}
+        onOpenFaq={onOpenFaq || (() => {})}
+      />
+    );
+  }
+
+  // If modules exist but are filtered out by search
+  if (modules.length === 0) {
+    return (
+      <div className="w-full max-w-md mx-auto py-16 text-center flex flex-col items-center bg-white rounded-2xl border border-slate-200 p-8 shadow-xs">
+        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+          <SearchX className="w-5 h-5" />
+        </div>
+        <h3 className="text-sm font-bold text-slate-800">No matching modules</h3>
+        <p className="text-xs text-slate-500 mt-1">
+          No modules matched your current filter criteria.
+        </p>
+        {onClearSearch && (
+          <button
+            type="button"
+            onClick={onClearSearch}
+            className="mt-4 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-mono cursor-pointer transition-colors shadow-xs"
+          >
+            Clear Search Filter
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <motion.div
       layout
@@ -109,17 +166,21 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
             <div
               key={mod.id}
               onClick={() => onSelectModule(mod.id)}
-              className="group bg-white rounded-xl border border-slate-200 hover:border-purple-400 p-4 transition-all duration-150 cursor-pointer shadow-xs hover:shadow-sm text-left flex flex-col justify-between"
+              className="group relative bg-white rounded-xl border border-slate-200 hover:border-purple-400 p-5 transition-all duration-150 cursor-pointer shadow-xs hover:shadow-sm text-left flex flex-col justify-between"
             >
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-mono text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100">
+                <div className="flex items-start justify-between gap-3 mb-2.5">
+                  <span className="font-mono text-xs font-semibold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-100">
                     {mod.prefix}
                   </span>
-                  <span className="flex items-center gap-1 text-[11px] font-mono text-slate-400">
-                    <Clock className="w-3 h-3 text-slate-400" />
-                    <span>{mod.estimatedHours}</span>
-                  </span>
+
+                  {/* Module Progress Dashboard Radial Overlay */}
+                  <ModuleProgressDashboard
+                    module={mod}
+                    completedArtifactIds={completedArtifactIds}
+                    size="md"
+                    showDetails={true}
+                  />
                 </div>
 
                 <h3 className="text-sm font-bold text-slate-900 group-hover:text-purple-950 transition-colors mt-1">
@@ -132,9 +193,15 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
               </div>
 
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="font-mono text-[11px] text-slate-500 font-medium">
-                  {mod.courseCode}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[11px] text-slate-500 font-medium">
+                    {mod.courseCode}
+                  </span>
+                  <span className="flex items-center gap-1 text-[11px] font-mono text-slate-400">
+                    <Clock className="w-3 h-3 text-slate-400" />
+                    <span>{mod.estimatedHours}</span>
+                  </span>
+                </div>
                 <span className="flex items-center gap-0.5 text-xs font-medium text-purple-700 group-hover:text-purple-900 transition-colors">
                   <span>View roadmap</span>
                   <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />

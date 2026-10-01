@@ -5,11 +5,15 @@ import { StudyArtifact } from '../types';
 
 interface StudyInspectorModalProps {
   artifact: StudyArtifact | null;
+  isCompleted?: boolean;
+  onToggleCompleted?: (id: string) => void;
   onClose: () => void;
 }
 
 export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
   artifact,
+  isCompleted = false,
+  onToggleCompleted,
   onClose,
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'examples' | 'quiz'>('overview');
@@ -71,6 +75,29 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {onToggleCompleted && (
+                <button
+                  onClick={() => onToggleCompleted(artifact.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors cursor-pointer border shadow-xs ${
+                    isCompleted
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold hover:bg-emerald-100'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                  }`}
+                  title={isCompleted ? 'Mark as incomplete' : 'Mark as completed'}
+                >
+                  <div
+                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
+                      isCompleted
+                        ? 'bg-emerald-600 border-emerald-600 text-white'
+                        : 'border-slate-400 bg-white'
+                    }`}
+                  >
+                    {isCompleted && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                  </div>
+                  <span>{isCompleted ? 'Completed' : 'Mark Done'}</span>
+                </button>
+              )}
+
               <button
                 onClick={handleCopyNotes}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors cursor-pointer shadow-xs"

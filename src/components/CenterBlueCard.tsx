@@ -6,12 +6,14 @@ import { ChevronRight, Bookmark } from 'lucide-react';
 interface CenterBlueCardProps {
   moduleNode: StudyModuleNode | null;
   activeTopicId: string | null;
+  completedArtifactIds?: string[];
   onSelectTopic: (topicId: string) => void;
 }
 
 export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
   moduleNode,
   activeTopicId,
+  completedArtifactIds = [],
   onSelectTopic,
 }) => {
   // If no module is selected, do not render anything
@@ -61,6 +63,11 @@ export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
         <div className="flex flex-col gap-2">
           {roadmap.topics.map((topic) => {
             const isTopicActive = activeTopicId === topic.id;
+            const topicCompletedCount = topic.artifacts.filter((a) =>
+              completedArtifactIds.includes(a.id)
+            ).length;
+            const isAllCompleted =
+              topic.artifacts.length > 0 && topicCompletedCount === topic.artifacts.length;
 
             return (
               <button
@@ -81,13 +88,27 @@ export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
                   >
                     {topic.topicName}
                   </h3>
-                  <ChevronRight
-                    className={`w-3.5 h-3.5 shrink-0 mt-0.5 transition-transform ${
-                      isTopicActive
-                        ? 'text-blue-600 translate-x-0.5'
-                        : 'text-slate-400'
-                    }`}
-                  />
+                  <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                    {topicCompletedCount > 0 && (
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.2 rounded border font-semibold ${
+                          isAllCompleted
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                        title={`${topicCompletedCount} of ${topic.artifacts.length} artifacts completed`}
+                      >
+                        {topicCompletedCount}/{topic.artifacts.length}
+                      </span>
+                    )}
+                    <ChevronRight
+                      className={`w-3.5 h-3.5 transition-transform ${
+                        isTopicActive
+                          ? 'text-blue-600 translate-x-0.5'
+                          : 'text-slate-400'
+                      }`}
+                    />
+                  </div>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
                   {topic.objective}
