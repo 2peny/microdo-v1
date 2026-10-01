@@ -138,7 +138,7 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
               }`}
             >
               <Code2 className="w-3.5 h-3.5" />
-              <span>2. Worked Examples & Code</span>
+              <span>2. Practical Example & Solution</span>
             </button>
             {artifact.quizData && (
               <button
@@ -162,7 +162,7 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
                 <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-start gap-2.5">
                   <Sparkles className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
                   <p className="text-xs text-emerald-900 font-sans">
-                    <strong>Study Directive:</strong> Master the core invariants and definitions below. These constitute the fundamental grading criteria in technical assessments.
+                    <strong>Study Directive:</strong> Master the core concepts, mechanisms, and key distinctions below sourced directly from your course materials.
                   </p>
                 </div>
 
@@ -195,17 +195,56 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
 
             {activeTab === 'examples' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-emerald-800 font-bold">
-                    Step-by-Step Implementation & Calculation
-                  </span>
-                </div>
+                {artifact.workedExamplesMarkdown.trim().startsWith('//') ||
+                artifact.workedExamplesMarkdown.includes('```') ||
+                artifact.workedExamplesMarkdown.includes('function ') ||
+                artifact.workedExamplesMarkdown.includes('const ') ||
+                artifact.workedExamplesMarkdown.includes('def ') ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono text-emerald-800 font-bold">
+                        Code Implementation & Execution
+                      </span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 font-mono text-xs overflow-x-auto leading-relaxed shadow-xs">
+                      <pre className="text-emerald-300 whitespace-pre-wrap">
+                        {artifact.workedExamplesMarkdown}
+                      </pre>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono text-emerald-800 font-bold">
+                        Practical Scenario & Step-by-Step Solution
+                      </span>
+                    </div>
+                    <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs leading-relaxed space-y-2 whitespace-pre-wrap font-sans">
+                      {artifact.workedExamplesMarkdown.split('\n').map((line, idx) => {
+                        const isHeading = line.startsWith('#');
+                        const isBullet = line.trim().startsWith('-') || line.trim().startsWith('*');
+                        const isBold = line.trim().startsWith('**');
 
-                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 font-mono text-xs overflow-x-auto leading-relaxed shadow-xs">
-                  <pre className="text-emerald-300">
-                    {artifact.workedExamplesMarkdown}
-                  </pre>
-                </div>
+                        return (
+                          <div
+                            key={idx}
+                            className={`${
+                              isHeading
+                                ? 'text-slate-900 font-bold text-sm pt-2 border-b border-slate-200/80 pb-1 font-mono'
+                                : isBullet
+                                ? 'pl-3 border-l-2 border-blue-500 font-mono'
+                                : isBold
+                                ? 'text-slate-900 font-semibold'
+                                : 'text-slate-700'
+                            }`}
+                          >
+                            {line || ' '}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

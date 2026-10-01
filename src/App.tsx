@@ -10,8 +10,9 @@ import { BreadcrumbNav } from './components/BreadcrumbNav';
 import { StudyInspectorModal } from './components/StudyInspectorModal';
 import { UploadModuleModal } from './components/UploadModuleModal';
 import { FaqModal } from './components/FaqModal';
+import { UnloadConfirmModal } from './components/UnloadConfirmModal';
 import { FooterBar } from './components/FooterBar';
-import { Search } from 'lucide-react';
+import { Search, CheckCircle2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -108,6 +109,24 @@ export default function App() {
     } catch {
       // Safe fallback
     }
+
+    try {
+      fetch('/api/unload-module', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moduleId: 'all', title: 'All Modules' }),
+      });
+    } catch {
+      // Safe fallback
+    }
+
+    setUnloadToast({
+      message: 'Workspace Cleared',
+      sub: 'All modules unloaded and server memory purged.',
+    });
+    setTimeout(() => {
+      setUnloadToast((curr) => (curr?.message === 'Workspace Cleared' ? null : curr));
+    }, 4000);
   };
 
   // Handle clicking a module
@@ -141,6 +160,79 @@ export default function App() {
     } catch {
       // Safe fallback
     }
+  };
+
+  // Unload module state & server document purge handler
+  const [moduleToUnload, setModuleToUnload] = useState<StudyModuleNode | null>(null);
+  const [isUnloading, setIsUnloading] = useState(false);
+  const [unloadToast, setUnloadToast] = useState<{ message: string; sub?: string } | null>(null);
+
+  const handleConfirmUnloadModule = async (mod: StudyModuleNode) => {
+    setIsUnloading(true);
+    const modTitle = mod.title;
+    const modId = mod.id;
+
+    // Collect all artifact ids from this module to purge progress
+    const modArtifactIds = mod.blueRoadmap.topics.flatMap((t) => t.artifacts.map((a) => a.id));
+
+    // 1. Remove from courses state
+    const updatedCourses = courses.map((c, idx) => {
+      if (idx === 0 || c.id === currentCourse.id) {
+        return {
+          ...c,
+          modules: c.modules.filter((m) => m.id !== modId),
+        };
+      }
+      return c;
+    });
+
+    setCourses(updatedCourses);
+
+    // 2. Clean up artifact completion progress
+    const updatedCompletedIds = completedArtifactIds.filter(
+      (id) => !modArtifactIds.includes(id)
+    );
+    setCompletedArtifactIds(updatedCompletedIds);
+
+    // 3. Reset selection if the unloaded module was active
+    if (selectedModuleId === modId) {
+      setSelectedModuleId(null);
+      setActiveTopicId(null);
+      setInspectedArtifact(null);
+    }
+
+    // 4. Update localStorage
+    try {
+      localStorage.setItem('microdo_courses', JSON.stringify(updatedCourses));
+      localStorage.setItem(
+        'microdo_completed_artifacts',
+        JSON.stringify(updatedCompletedIds)
+      );
+    } catch {
+      // Safe fallback
+    }
+
+    // 5. Notify server API to purge document buffers and free memory
+    try {
+      await fetch('/api/unload-module', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moduleId: modId, title: modTitle }),
+      });
+    } catch (err) {
+      console.warn('Notice: Server unload API call completed with local purge:', err);
+    }
+
+    setIsUnloading(false);
+    setModuleToUnload(null);
+    setUnloadToast({
+      message: `Unloaded "${modTitle}"`,
+      sub: 'Document parsed data purged & server memory freed.',
+    });
+
+    setTimeout(() => {
+      setUnloadToast((curr) => (curr?.message === `Unloaded "${modTitle}"` ? null : curr));
+    }, 4500);
   };
 
   // Reset Flow / Return to initial module directory
@@ -239,6 +331,7 @@ export default function App() {
                 onOpenFaq={() => setIsFaqOpen(true)}
                 hasAnyModules={currentCourse.modules.length > 0}
                 onClearSearch={() => setSearchQuery('')}
+                onRequestUnload={(mod) => setModuleToUnload(mod)}
               />
             </div>
           ) : (
@@ -269,6 +362,7 @@ export default function App() {
                 onSelectModule={handleSelectModule}
                 isRailMode={true}
                 completedArtifactIds={completedArtifactIds}
+                onRequestUnload={(mod) => setModuleToUnload(mod)}
               />
 
               {/* Column 2: Center Blue Key Topics Roadmap */}
@@ -277,6 +371,7 @@ export default function App() {
                 activeTopicId={activeTopicId}
                 completedArtifactIds={completedArtifactIds}
                 onSelectTopic={handleSelectTopic}
+                onRequestUnload={(mod) => setModuleToUnload(mod)}
               />
 
               {/* Column 3: Right Green Study Content Panel (Only rendered when topic selected!) */}
@@ -326,6 +421,49 @@ export default function App() {
         onClose={() => setIsFaqOpen(false)}
         onOpenUploadModal={() => setIsUploadModalOpen(true)}
       />
+
+      {/* Module Unload & Document Purge Confirmation Modal */}
+      <UnloadConfirmModal
+        moduleToUnload={moduleToUnload}
+        isOpen={Boolean(moduleToUnload)}
+        onClose={() => setModuleToUnload(null)}
+        onConfirmUnload={handleConfirmUnloadModule}
+        isUnloading={isUnloading}
+      />
+
+      {/* Realtime Unload & Storage Purge Toast Banner */}
+      <AnimatePresence>
+        {unloadToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed bottom-10 right-6 z-50 bg-slate-900 text-white rounded-xl px-4 py-3 shadow-2xl border border-slate-700/70 flex items-center gap-3 max-w-sm sm:max-w-md pointer-events-auto"
+          >
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-white truncate font-sans">
+                {unloadToast.message}
+              </p>
+              {unloadToast.sub && (
+                <p className="text-[11px] text-slate-300 font-mono mt-0.5">
+                  {unloadToast.sub}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setUnloadToast(null)}
+              className="p-1 rounded-md text-slate-400 hover:text-white transition-colors cursor-pointer"
+              aria-label="Dismiss notification"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

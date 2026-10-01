@@ -1,13 +1,14 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { StudyModuleNode } from '../types';
-import { ChevronRight, Bookmark } from 'lucide-react';
+import { ChevronRight, Bookmark, Trash2 } from 'lucide-react';
 
 interface CenterBlueCardProps {
   moduleNode: StudyModuleNode | null;
   activeTopicId: string | null;
   completedArtifactIds?: string[];
   onSelectTopic: (topicId: string) => void;
+  onRequestUnload?: (module: StudyModuleNode) => void;
 }
 
 export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
@@ -15,6 +16,7 @@ export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
   activeTopicId,
   completedArtifactIds = [],
   onSelectTopic,
+  onRequestUnload,
 }) => {
   // If no module is selected, do not render anything
   if (!moduleNode) {
@@ -37,9 +39,22 @@ export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
           <Bookmark className="w-3.5 h-3.5" />
           <span>KEY TOPICS ROADMAP</span>
         </div>
-        <span className="text-[11px] font-mono text-slate-400">
-          {roadmap.topics.length} topics
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-mono text-slate-400">
+            {roadmap.topics.length} topics
+          </span>
+          {onRequestUnload && (
+            <button
+              type="button"
+              onClick={() => onRequestUnload(moduleNode)}
+              title="Unload module & purge document from server memory"
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3 text-slate-400 hover:text-red-500" />
+              <span>Unload</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Roadmap Container */}

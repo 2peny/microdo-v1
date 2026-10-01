@@ -212,9 +212,27 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
                 {
                   id: `art-ex-${Date.now()}-${idx}`,
                   type: 'examples' as const,
-                  path: `${topicSlug}-worked-example.ts`,
-                  title: 'Worked Examples & Code',
-                  tagline: 'Step-by-step problem solution and verification',
+                  path:
+                    t.workedExample?.includes('function ') ||
+                    t.workedExample?.includes('const ') ||
+                    t.workedExample?.trim().startsWith('//') ||
+                    t.workedExample?.includes('def ')
+                      ? `${topicSlug}-code-example.ts`
+                      : `${topicSlug}-practical-example.md`,
+                  title:
+                    t.workedExample?.includes('function ') ||
+                    t.workedExample?.includes('const ') ||
+                    t.workedExample?.trim().startsWith('//') ||
+                    t.workedExample?.includes('def ')
+                      ? 'Worked Code & Implementation'
+                      : 'Practical Example & Solution',
+                  tagline:
+                    t.workedExample?.includes('function ') ||
+                    t.workedExample?.includes('const ') ||
+                    t.workedExample?.trim().startsWith('//') ||
+                    t.workedExample?.includes('def ')
+                      ? 'Step-by-step code verification'
+                      : 'Concrete applied scenario & solution',
                   lines: [{ width: '88%' }, { width: '65%' }, { width: '75%' }],
                   overviewMarkdown: t.overview,
                   workedExamplesMarkdown: t.workedExample,

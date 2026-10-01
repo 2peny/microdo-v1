@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { StudyModuleNode } from '../types';
-import { BookOpen, Clock, CheckCircle2, ChevronRight, SearchX } from 'lucide-react';
+import { BookOpen, Clock, CheckCircle2, ChevronRight, SearchX, Trash2, HardDrive } from 'lucide-react';
 import { ModuleProgressDashboard } from './ModuleProgressDashboard';
 import { EmptyStateView } from './EmptyStateView';
 
@@ -16,6 +16,7 @@ interface LeftCardsColumnProps {
   onOpenFaq?: () => void;
   hasAnyModules?: boolean;
   onClearSearch?: () => void;
+  onRequestUnload?: (module: StudyModuleNode) => void;
 }
 
 export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
@@ -29,6 +30,7 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
   onOpenFaq,
   hasAnyModules = true,
   onClearSearch,
+  onRequestUnload,
 }) => {
   // 1. RAIL MODE (When a module is selected): Narrow vertical left sidebar
   if (isRailMode) {
@@ -55,10 +57,18 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
             const isSelected = mod.id === selectedModuleId;
 
             return (
-              <button
+              <div
                 key={mod.id}
                 id={`left-module-${mod.id}`}
                 onClick={() => onSelectModule(mod.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectModule(mod.id);
+                  }
+                }}
                 className={`w-full text-left rounded-lg p-3 transition-all cursor-pointer border ${
                   isSelected
                     ? 'bg-purple-50/70 border-purple-500 ring-1 ring-purple-300 shadow-xs'
@@ -82,6 +92,20 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
                         <span>Active</span>
                       </span>
                     )}
+                    {onRequestUnload && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRequestUnload(mod);
+                        }}
+                        title="Unload module & purge document"
+                        className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors cursor-pointer"
+                        aria-label={`Unload ${mod.title}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -96,7 +120,7 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
                     <span>{mod.estimatedHours}</span>
                   </span>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -155,9 +179,15 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
             Course Modules Directory
           </h2>
         </div>
-        <span className="text-xs font-mono text-slate-400">
-          {modules.length} {modules.length === 1 ? 'module' : 'modules'} available
-        </span>
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-mono text-slate-400">
+            {modules.length} {modules.length === 1 ? 'module' : 'modules'} loaded
+          </span>
+          <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200" title="Server memory healthy; you can unload any unused module anytime">
+            <HardDrive className="w-3 h-3 text-emerald-600" />
+            <span>Memory Lean</span>
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -174,13 +204,30 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
                     {mod.prefix}
                   </span>
 
-                  {/* Module Progress Dashboard Radial Overlay */}
-                  <ModuleProgressDashboard
-                    module={mod}
-                    completedArtifactIds={completedArtifactIds}
-                    size="md"
-                    showDetails={true}
-                  />
+                  <div className="flex items-center gap-2">
+                    {/* Module Progress Dashboard Radial Overlay */}
+                    <ModuleProgressDashboard
+                      module={mod}
+                      completedArtifactIds={completedArtifactIds}
+                      size="md"
+                      showDetails={true}
+                    />
+
+                    {onRequestUnload && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRequestUnload(mod);
+                        }}
+                        title="Unload module & purge document from server memory"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200/60 hover:border-red-200 transition-colors cursor-pointer shadow-2xs"
+                        aria-label={`Unload ${mod.title}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <h3 className="text-sm font-bold text-slate-900 group-hover:text-purple-950 transition-colors mt-1">
@@ -202,10 +249,25 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
                     <span>{mod.estimatedHours}</span>
                   </span>
                 </div>
-                <span className="flex items-center gap-0.5 text-xs font-medium text-purple-700 group-hover:text-purple-900 transition-colors">
-                  <span>View roadmap</span>
-                  <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
-                </span>
+                <div className="flex items-center gap-3">
+                  {onRequestUnload && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRequestUnload(mod);
+                      }}
+                      className="text-[11px] font-mono text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                      title="Unload this document"
+                    >
+                      Unload
+                    </button>
+                  )}
+                  <span className="flex items-center gap-0.5 text-xs font-medium text-purple-700 group-hover:text-purple-900 transition-colors">
+                    <span>View roadmap</span>
+                    <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </div>
               </div>
             </div>
           );
