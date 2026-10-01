@@ -51,6 +51,30 @@ if (process.env.MYSQL_HOST) {
       queueLimit: 0
     });
     console.log('MySQL connection pool created.');
+    
+    // Auto-setup database schema
+    (async function initializeDatabase() {
+      try {
+        await dbPool.execute(`
+          CREATE TABLE IF NOT EXISTS microdo_users (
+            id VARCHAR(64) PRIMARY KEY,
+            username VARCHAR(64) NOT NULL UNIQUE,
+            email VARCHAR(191) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            full_name VARCHAR(128) NOT NULL,
+            archetype VARCHAR(64) NOT NULL DEFAULT 'midnight_owl',
+            avatar_emoji VARCHAR(16) NOT NULL DEFAULT '🦉',
+            major_focus VARCHAR(128) NOT NULL DEFAULT 'Computer Science',
+            role VARCHAR(32) NOT NULL DEFAULT 'scholar',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+        console.log('Database schema validated/created successfully.');
+      } catch (err) {
+        console.error('Failed to auto-create tables. Check DB permissions:', err.message);
+      }
+    })();
+
   } catch (err) {
     console.error('Failed to create MySQL pool:', err);
   }

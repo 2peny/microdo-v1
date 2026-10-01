@@ -52,44 +52,7 @@ export const ARCHETYPES: Record<ScholarArchetype, ArchetypeDetail> = {
   },
 };
 
-export const DEMO_SCHOLARS: ScholarUser[] = [
-  {
-    id: 'usr-001',
-    username: 'ada.lovelace',
-    email: 'ada@nodegrid.space',
-    fullName: 'Countess Ada Lovelace',
-    archetype: 'caffeine_alchemist',
-    archetypeLabel: 'Caffeine Alchemist',
-    avatarEmoji: '☕',
-    majorOrFocus: 'Analytical Engines & Computation',
-    joinedAt: '2026-01-15',
-    role: 'scholar',
-  },
-  {
-    id: 'usr-002',
-    username: 'alan.turing',
-    email: 'alan@nodegrid.space',
-    fullName: 'Dr. Alan Turing',
-    archetype: 'formula_crafter',
-    archetypeLabel: 'Formula Crafter',
-    avatarEmoji: '📐',
-    majorOrFocus: 'Cryptography & Morphogenesis',
-    joinedAt: '2026-02-01',
-    role: 'instructor',
-  },
-  {
-    id: 'usr-003',
-    username: 'curious.scholar',
-    email: 'student@nodegrid.space',
-    fullName: 'Alex Vance',
-    archetype: 'midnight_owl',
-    archetypeLabel: 'Midnight Synthesizer',
-    avatarEmoji: '🦉',
-    majorOrFocus: 'Computer Systems & Bio-Informatics',
-    joinedAt: '2026-03-01',
-    role: 'scholar',
-  },
-];
+
 
 const STORAGE_KEY_AUTH = 'microdo_current_scholar';
 const STORAGE_KEY_USERS = 'microdo_all_registered_users';
@@ -97,10 +60,10 @@ const STORAGE_KEY_USERS = 'microdo_all_registered_users';
 export function getStoredUser(): ScholarUser | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_AUTH);
-    if (!raw) return DEMO_SCHOLARS[2]; // Default to student@nodegrid.space
+    if (!raw) return null;
     return JSON.parse(raw);
   } catch {
-    return DEMO_SCHOLARS[2];
+    return null;
   }
 }
 
@@ -119,7 +82,7 @@ export function saveStoredUser(user: ScholarUser | null): void {
 export function getAllRegisteredUsers(): ScholarUser[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_USERS);
-    if (!raw) return DEMO_SCHOLARS;
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed;
@@ -127,7 +90,7 @@ export function getAllRegisteredUsers(): ScholarUser[] {
   } catch {
     // Fallback
   }
-  return DEMO_SCHOLARS;
+  return [];
 }
 
 export function registerScholarUser(userData: Omit<ScholarUser, 'id' | 'joinedAt'>): ScholarUser {

@@ -19,7 +19,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import { ScholarUser, ScholarArchetype } from '../types';
-import { ARCHETYPES, DEMO_SCHOLARS, registerScholarUser } from '../utils/authStorage';
+import { ARCHETYPES } from '../utils/authStorage';
 
 interface AuthOverlayProps {
   isOpen: boolean;
@@ -71,29 +71,13 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const strength = getPasswordStrength(password);
   const activeArchetypeObj = ARCHETYPES[selectedArchetype];
 
-  // Quick Demo Autofill
-  const handleAutofill = (scholar: ScholarUser) => {
-    setErrorMsg(null);
-    if (mode === 'login') {
-      setIdentifier(scholar.email);
-      setPassword('microdo2026');
-    } else {
-      setFullName(scholar.fullName);
-      setEmail(scholar.email);
-      setUsername(scholar.username);
-      setSelectedArchetype(scholar.archetype);
-      setMajorFocus(scholar.majorOrFocus);
-      setPassword('microdo2026');
-    }
-  };
-
   // Submit Handler
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setIsSubmitting(true);
 
-    setTimeout(() => {
+    try {
       if (mode === 'login') {
         const cleanIdent = identifier.trim().toLowerCase();
         if (!cleanIdent) {
@@ -107,22 +91,26 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           return;
         }
 
-        // Check against demo or match registered
-        const matched = DEMO_SCHOLARS.find(
-          (u) => u.email.toLowerCase() === cleanIdent || u.username.toLowerCase() === cleanIdent
-        );
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: cleanIdent, password }),
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          setErrorMsg(data.error || 'Authentication failed');
+          setIsSubmitting(false);
+          return;
+        }
 
-        const authenticatedUser: ScholarUser = matched || {
-          id: `usr-${Date.now().toString(36)}`,
-          username: cleanIdent.split('@')[0],
-          email: cleanIdent.includes('@') ? cleanIdent : `${cleanIdent}@nodegrid.space`,
-          fullName: cleanIdent.split('@')[0].replace('.', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          archetype: 'caffeine_alchemist',
-          archetypeLabel: 'Caffeine Alchemist',
-          avatarEmoji: '☕',
-          majorOrFocus: 'Interdisciplinary Studies',
-          joinedAt: new Date().toISOString().split('T')[0],
-          role: 'scholar',
+        const authenticatedUser = {
+          ...data.user,
+          fullName: data.user.full_name,
+          majorOrFocus: data.user.major_focus,
+          avatarEmoji: data.user.avatar_emoji,
+          joinedAt: data.user.created_at,
         };
 
         setSuccessNotice(`Welcome back, ${authenticatedUser.fullName}! Station clearance verified.`);
@@ -136,41 +124,66 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
         const cleanEmail = email.trim().toLowerCase();
         const cleanUsername = username.trim().toLowerCase() || cleanEmail.split('@')[0];
 
-        if (!cleanName) {
-          setErrorMsg('Please specify your Scholar Name.');
-          setIsSubmitting(false);
-          return;
-        }
-        if (!cleanEmail || !cleanEmail.includes('@')) {
-          setErrorMsg('Please provide a valid academic or personal email.');
-          setIsSubmitting(false);
-          return;
-        }
-        if (!password || password.length < 4) {
-          setErrorMsg('Password must be at least 4 characters.');
+        if (!cleanName || !cleanEmail || !cleanEmail.includes('@') || !password || password.length < 4) {
+          setErrorMsg('Please fill out all fields correctly.');
           setIsSubmitting(false);
           return;
         }
 
-        const newUser = registerScholarUser({
-          username: cleanUsername,
-          email: cleanEmail,
-          fullName: cleanName,
-          archetype: selectedArchetype,
-          archetypeLabel: activeArchetypeObj.label,
-          avatarEmoji: activeArchetypeObj.emoji,
-          majorOrFocus: majorFocus || 'Computer Science',
-          role: 'scholar',
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: cleanUsername,
+            email: cleanEmail,
+            full_name: cleanName,
+            password_hash: password,
+            archetype: selectedArchetype,
+            avatar_emoji: activeArchetypeObj.emoji,
+            major_focus: majorFocus || 'Computer Science'
+          }),
         });
 
-        setSuccessNotice(`Scholar Passport forged for ${newUser.fullName}! Entry stamped.`);
-        setTimeout(() => {
+        const data = await res.json();
+        if (!res.ok) {
+          setErrorMsg(data.error || 'Registration failed');
           setIsSubmitting(false);
-          onLoginSuccess(newUser);
-          onClose();
-        }, 600);
+          return;
+        }
+
+        // After successful registration, log them in automatically
+        const loginRes = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: cleanUsername, password }),
+        });
+        
+        const loginData = await loginRes.json();
+        
+        if (loginRes.ok && loginData.user) {
+          const newUser = {
+            ...loginData.user,
+            fullName: loginData.user.full_name,
+            majorOrFocus: loginData.user.major_focus,
+            avatarEmoji: loginData.user.avatar_emoji,
+            joinedAt: loginData.user.created_at,
+          };
+          setSuccessNotice(`Scholar Passport forged for ${newUser.fullName}! Entry stamped.`);
+          setTimeout(() => {
+            setIsSubmitting(false);
+            onLoginSuccess(newUser);
+            onClose();
+          }, 600);
+        } else {
+          setSuccessNotice('Registered successfully! Please log in.');
+          setMode('login');
+          setIsSubmitting(false);
+        }
       }
-    }, 450);
+    } catch (err: any) {
+      setErrorMsg('Network error or server offline: ' + err.message);
+      setIsSubmitting(false);
+    }
   };
 
 
@@ -297,36 +310,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
           {/* FORM: LOGIN OR REGISTER */}
           <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Quick Persona Fillers for Instant Testing */}
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[11px] font-mono text-slate-500 uppercase font-medium flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-amber-500" />
-                    Quick-Fill Test Scholars:
-                  </span>
-                  <span className="text-[10px] text-slate-400">One-click test</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {DEMO_SCHOLARS.map((scholar) => (
-                    <button
-                      key={scholar.id}
-                      type="button"
-                      onClick={() => handleAutofill(scholar)}
-                      className="px-2 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 text-left transition-all cursor-pointer shadow-2xs group"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm">{scholar.avatarEmoji}</span>
-                        <span className="text-xs font-semibold text-slate-800 truncate group-hover:text-indigo-600">
-                          {scholar.fullName.split(' ')[0]}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-slate-400 truncate font-mono">
-                        {scholar.username}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
+
 
               {/* REGISTER EXTRA: Scholar Name & Email */}
               {mode === 'register' && (
