@@ -56,3 +56,24 @@ export interface StudyDirectoryCourse {
   subquote: string;
   modules: StudyModuleNode[];
 }
+
+export type ScholarArchetype = 
+  | 'caffeine_alchemist' 
+  | 'midnight_owl' 
+  | 'deep_monk' 
+  | 'speed_runner' 
+  | 'formula_crafter';
+
+export interface ScholarUser {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  archetype: ScholarArchetype;
+  archetypeLabel: string;
+  avatarEmoji: string;
+  majorOrFocus: string;
+  joinedAt: string;
+  role: 'scholar' | 'instructor' | 'admin';
+}
+

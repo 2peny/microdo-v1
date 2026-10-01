@@ -1,7 +1,7 @@
 import React from 'react';
-import { Upload, RotateCcw, Layers } from 'lucide-react';
+import { Upload, RotateCcw, Layers, UserCircle } from 'lucide-react';
 import { ProgressOverview } from './ProgressOverview';
-import { StudyModuleNode } from '../types';
+import { StudyModuleNode, ScholarUser } from '../types';
 
 interface HeaderProps {
   courseName: string;
@@ -12,6 +12,8 @@ interface HeaderProps {
   onSelectModule?: (moduleId: string) => void;
   onOpenUploadModal: () => void;
   onResetFlow: () => void;
+  currentUser?: ScholarUser | null;
+  onOpenAuth?: (mode?: 'login' | 'register') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,14 +22,16 @@ export const Header: React.FC<HeaderProps> = ({
   completedArtifactsCount,
   modules,
   completedArtifactIds,
+  currentUser,
+  onOpenAuth,
   onSelectModule,
   onOpenUploadModal,
   onResetFlow,
 }) => {
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white px-4 sm:px-6 py-2.5 flex items-center justify-between shadow-xs gap-3">
+    <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 flex items-center justify-between shadow-xs gap-2 sm:gap-3">
       {/* Left: Wordmark / Brand */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3">
         <button
           onClick={onResetFlow}
           className="text-base font-bold tracking-tight text-slate-900 hover:text-indigo-600 transition-colors flex items-center gap-2 cursor-pointer"
@@ -37,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
             <Layers className="w-3.5 h-3.5" />
           </div>
           <span className="font-mono tracking-tight font-extrabold text-slate-900">MicroDo</span>
-          <span className="text-slate-400 font-normal text-xs font-mono">
+          <span className="hidden sm:inline text-slate-400 font-normal text-xs font-mono">
             / interactive directory
           </span>
         </button>
@@ -51,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right: Progress Overview & Actions */}
-      <div className="flex items-center gap-2 sm:gap-2.5">
+      <div className="flex items-center gap-1.5 sm:gap-2.5">
         <ProgressOverview
           completedCount={completedArtifactsCount}
           totalCount={totalArtifactsCount}
@@ -73,12 +77,26 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={onOpenUploadModal}
-          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium font-sans transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium font-sans transition-colors cursor-pointer shadow-xs whitespace-nowrap"
         >
           <Upload className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Upload Module</span>
-          <span className="sm:hidden">Upload</span>
+          <span className="hidden md:inline">Upload Module</span>
+          <span className="md:hidden">Upload</span>
         </button>
+
+        {/* Quirky Scholar Passport / Auth Trigger Button */}
+        {onOpenAuth && (
+          <button
+            onClick={() => onOpenAuth('login')}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-medium font-sans transition-all cursor-pointer shadow-2xs group"
+            title="Open Scholar Passport & Auth Overlay"
+          >
+            <span className="text-sm">{currentUser?.avatarEmoji || '🎓'}</span>
+            <span className="hidden sm:inline font-semibold truncate max-w-[100px]">
+              {currentUser?.fullName.split(' ')[0] || 'Sign In'}
+            </span>
+          </button>
+        )}
       </div>
     </header>
   );

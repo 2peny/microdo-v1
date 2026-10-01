@@ -55,6 +55,7 @@ const MIME_TYPES = {
   '.ttf': 'font/ttf',
   '.webp': 'image/webp',
   '.txt': 'text/plain; charset=utf-8',
+  '.sql': 'text/plain; charset=utf-8',
 };
 
 // 4. Helper to parse JSON request body

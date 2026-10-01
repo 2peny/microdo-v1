@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { EMPTY_STUDY_COURSE, INITIAL_STUDY_COURSES } from './data/initialStudyCourses';
-import { StudyDirectoryCourse, StudyModuleNode, StudyArtifact } from './types';
+import { StudyDirectoryCourse, StudyModuleNode, StudyArtifact, ScholarUser } from './types';
 import { Header } from './components/Header';
 import { LeftCardsColumn } from './components/LeftCardsColumn';
 import { CenterBlueCard } from './components/CenterBlueCard';
@@ -11,8 +11,10 @@ import { StudyInspectorModal } from './components/StudyInspectorModal';
 import { UploadModuleModal } from './components/UploadModuleModal';
 import { FaqModal } from './components/FaqModal';
 import { UnloadConfirmModal } from './components/UnloadConfirmModal';
+import { AuthOverlay } from './components/AuthOverlay';
 import { FooterBar } from './components/FooterBar';
-import { Search, CheckCircle2, X } from 'lucide-react';
+import { getStoredUser, saveStoredUser } from './utils/authStorage';
+import { Search, CheckCircle2, X, Sparkles, BookOpen, Bookmark, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
@@ -69,9 +71,24 @@ export default function App() {
     });
   };
 
-  // Modals & Drawers
+  // Modals, Drawers & Auth State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [currentUser, setCurrentUser] = useState<ScholarUser | null>(() => getStoredUser());
+  const [mobileActiveTab, setMobileActiveTab] = useState<'modules' | 'roadmap' | 'notes'>('roadmap');
+
+  const handleLoginSuccess = (user: ScholarUser) => {
+    setCurrentUser(user);
+    saveStoredUser(user);
+  };
+
+  const handleOpenAuth = (mode: 'login' | 'register' = 'login') => {
+    setAuthMode(mode);
+    setIsAuthOpen(true);
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const workspaceRef = useRef<HTMLDivElement>(null);
 
@@ -133,11 +150,13 @@ export default function App() {
   const handleSelectModule = (moduleId: string) => {
     setSelectedModuleId(moduleId);
     setActiveTopicId(null); // Reset topic when switching module; green pane will only reveal on topic click
+    setMobileActiveTab('roadmap');
   };
 
   // Handle clicking a blue topic
   const handleSelectTopic = (topicId: string) => {
     setActiveTopicId(topicId);
+    setMobileActiveTab('notes');
   };
 
   // Handle module created via Upload
@@ -275,10 +294,12 @@ export default function App() {
         onSelectModule={handleSelectModule}
         onOpenUploadModal={() => setIsUploadModalOpen(true)}
         onResetFlow={handleResetFlow}
+        currentUser={currentUser}
+        onOpenAuth={handleOpenAuth}
       />
 
       {/* 2. Secondary Bar: Dynamic Breadcrumb Path & Filters */}
-      <div className="w-full border-b border-slate-200 bg-white/95 px-6 py-2 flex flex-wrap items-center justify-between gap-4 text-xs font-mono shadow-xs z-20 sticky top-[53px]">
+      <div className="w-full border-b border-slate-200 bg-white/95 px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs font-mono shadow-xs z-20 sticky top-[53px]">
         {/* Hierarchical Breadcrumb Navigation */}
         <BreadcrumbNav
           course={currentCourse}
@@ -315,7 +336,7 @@ export default function App() {
       </div>
 
       {/* 3. Main Progressive Workspace */}
-      <main className="flex-1 flex flex-col p-6 lg:p-8 overflow-x-auto min-h-[580px]">
+      <main className="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 overflow-x-auto min-h-[580px]">
         <AnimatePresence mode="wait">
           {selectedModuleId === null ? (
             /* INITIAL SCREEN: ONLY show responsive module directory grid */
@@ -335,67 +356,129 @@ export default function App() {
               />
             </div>
           ) : (
-            /* WORKSPACE MODE: Narrow left rail | Blue Roadmap | Green Study Content */
-            <motion.div
-              ref={workspaceRef}
-              key="workspace-view"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="relative flex flex-row gap-6 w-full max-w-7xl mx-auto overflow-x-auto pb-6 items-start"
-            >
-              {/* Progressive Node Connector Lines */}
-              <ConnectorLines
-                containerRef={workspaceRef}
-                selectedModuleId={selectedModuleId}
-                activeTopicId={activeTopicId}
-                greenArtifactIds={activeTopic ? activeTopic.artifacts.map((a) => a.id) : []}
-                isBluePopped={Boolean(selectedModuleId)}
-                isGreenPopped={Boolean(activeTopic)}
-              />
-
-              {/* Column 1: Left Modules Rail */}
-              <LeftCardsColumn
-                modules={filteredModules}
-                selectedModuleId={selectedModuleId}
-                onSelectModule={handleSelectModule}
-                isRailMode={true}
-                completedArtifactIds={completedArtifactIds}
-                onRequestUnload={(mod) => setModuleToUnload(mod)}
-              />
-
-              {/* Column 2: Center Blue Key Topics Roadmap */}
-              <CenterBlueCard
-                moduleNode={activeModuleNode}
-                activeTopicId={activeTopicId}
-                completedArtifactIds={completedArtifactIds}
-                onSelectTopic={handleSelectTopic}
-                onRequestUnload={(mod) => setModuleToUnload(mod)}
-              />
-
-              {/* Column 3: Right Green Study Content Panel (Only rendered when topic selected!) */}
-              <AnimatePresence>
+            /* WORKSPACE MODE: Responsive across desktop, laptop, tablet, and mobile */
+            <div key="workspace-view" className="w-full max-w-7xl mx-auto flex flex-col">
+              {/* Responsive Level Switcher Tabs for Mobile Phones & Small Screens */}
+              <div className="md:hidden flex items-center gap-1.5 p-1 bg-slate-200/70 rounded-xl mb-4 border border-slate-300/80 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setMobileActiveTab('modules')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-mono font-medium transition-all text-center flex items-center justify-center gap-1 ${
+                    mobileActiveTab === 'modules'
+                      ? 'bg-white text-purple-800 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <BookOpen className="w-3 h-3 text-purple-600" />
+                  <span>1. Rail</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileActiveTab('roadmap')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-mono font-medium transition-all text-center flex items-center justify-center gap-1 ${
+                    mobileActiveTab === 'roadmap'
+                      ? 'bg-white text-blue-800 shadow-2xs font-semibold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Bookmark className="w-3 h-3 text-blue-600" />
+                  <span>2. Roadmap</span>
+                </button>
                 {activeTopic && (
-                  <RightGreenCards
-                    activeTopic={activeTopic}
-                    completedArtifactIds={completedArtifactIds}
-                    onToggleArtifactCompleted={handleToggleArtifactCompleted}
-                    onOpenArtifactDetail={(artifact) => setInspectedArtifact(artifact)}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setMobileActiveTab('notes')}
+                    className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-mono font-medium transition-all text-center flex items-center justify-center gap-1 ${
+                      mobileActiveTab === 'notes'
+                        ? 'bg-white text-emerald-800 shadow-2xs font-semibold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <GraduationCap className="w-3 h-3 text-emerald-600" />
+                    <span>3. Notes</span>
+                  </button>
                 )}
-              </AnimatePresence>
-            </motion.div>
+              </div>
+
+              {/* Multi-Column Canvas: Side-by-side on tablet/laptop/desktop; tabbed/fluid on mobile */}
+              <motion.div
+                ref={workspaceRef}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="relative flex flex-col md:flex-row gap-5 lg:gap-6 w-full overflow-x-auto pb-6 items-start"
+              >
+                {/* Progressive Node Connector Lines (rendered on tablets/desktops) */}
+                <div className="hidden md:block">
+                  <ConnectorLines
+                    containerRef={workspaceRef}
+                    selectedModuleId={selectedModuleId}
+                    activeTopicId={activeTopicId}
+                    greenArtifactIds={activeTopic ? activeTopic.artifacts.map((a) => a.id) : []}
+                    isBluePopped={Boolean(selectedModuleId)}
+                    isGreenPopped={Boolean(activeTopic)}
+                  />
+                </div>
+
+                {/* Column 1: Left Modules Rail */}
+                <div className={`w-full md:w-auto ${mobileActiveTab === 'modules' ? 'block' : 'hidden'} md:block shrink-0`}>
+                  <LeftCardsColumn
+                    modules={filteredModules}
+                    selectedModuleId={selectedModuleId}
+                    onSelectModule={handleSelectModule}
+                    isRailMode={true}
+                    completedArtifactIds={completedArtifactIds}
+                    onRequestUnload={(mod) => setModuleToUnload(mod)}
+                  />
+                </div>
+
+                {/* Column 2: Center Blue Key Topics Roadmap */}
+                <div className={`w-full md:w-auto ${mobileActiveTab === 'roadmap' ? 'block' : 'hidden'} md:block shrink-0`}>
+                  <CenterBlueCard
+                    moduleNode={activeModuleNode}
+                    activeTopicId={activeTopicId}
+                    completedArtifactIds={completedArtifactIds}
+                    onSelectTopic={handleSelectTopic}
+                    onRequestUnload={(mod) => setModuleToUnload(mod)}
+                  />
+                </div>
+
+                {/* Column 3: Right Green Study Content Panel */}
+                <AnimatePresence>
+                  {activeTopic && (
+                    <div className={`w-full md:w-auto ${mobileActiveTab === 'notes' ? 'block' : 'hidden'} md:block shrink-0`}>
+                      <RightGreenCards
+                        activeTopic={activeTopic}
+                        completedArtifactIds={completedArtifactIds}
+                        onToggleArtifactCompleted={handleToggleArtifactCompleted}
+                        onOpenArtifactDetail={(artifact) => setInspectedArtifact(artifact)}
+                      />
+                    </div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            </div>
           )}
         </AnimatePresence>
       </main>
 
-      {/* 4. Footer */}
+      {/* 4. Footer with User Session & Auth Trigger */}
       <FooterBar
-        currentUser="student@nodegrid.space"
+        currentUser={currentUser}
         onOpenFaq={() => setIsFaqOpen(true)}
         onClearToEmptyState={handleClearToEmptyState}
         hasModules={currentCourse.modules.length > 0}
+        onOpenAuth={handleOpenAuth}
+      />
+
+      {/* Quirky Scholar Authentication & Registration Overlay */}
+      <AuthOverlay
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        currentUser={currentUser}
+        onLoginSuccess={handleLoginSuccess}
+        initialMode={authMode}
       />
 
       {/* Study Inspector Modal */}
