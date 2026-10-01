@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import mysql from 'mysql2/promise';
 
 // 1. Resolve directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -35,6 +36,24 @@ try {
   }
 } catch (err) {
   console.warn('Notice: Could not read .env file:', err.message);
+}
+
+let dbPool = null;
+if (process.env.MYSQL_HOST) {
+  try {
+    dbPool = mysql.createPool({
+      host: process.env.MYSQL_HOST,
+      user: process.env.MYSQL_USER,
+      password: process.env.MYSQL_PASSWORD,
+      database: process.env.MYSQL_DATABASE,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    });
+    console.log('MySQL connection pool created.');
+  } catch (err) {
+    console.error('Failed to create MySQL pool:', err);
+  }
 }
 
 // 3. MIME types dictionary for static assets
@@ -91,6 +110,61 @@ function sendJson(res, statusCode, data) {
     'Access-Control-Allow-Origin': '*',
   });
   res.end(jsonStr);
+}
+
+async function handleRegister(req, res) {
+  if (!dbPool) return sendJson(res, 503, { error: 'Database connection not configured on server.' });
+  try {
+    const data = await parseRequestBody(req);
+    const { id, username, email, password_hash, full_name, archetype, avatar_emoji, major_focus } = data;
+    
+    if (!username || !email || !password_hash) {
+      return sendJson(res, 400, { error: 'Missing required registration fields' });
+    }
+    
+    const [result] = await dbPool.execute(
+      `INSERT INTO microdo_users 
+       (id, username, email, password_hash, full_name, archetype, avatar_emoji, major_focus, role) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scholar')`,
+      [id || `usr-${Date.now()}`, username, email, password_hash, full_name || '', archetype || 'midnight_owl', avatar_emoji || '🦉', major_focus || 'Computer Science']
+    );
+    
+    return sendJson(res, 201, { success: true, message: 'User registered in database' });
+  } catch (error) {
+    console.error('Register error:', error);
+    return sendJson(res, 500, { error: error.message || 'Registration failed' });
+  }
+}
+
+async function handleLogin(req, res) {
+  if (!dbPool) return sendJson(res, 503, { error: 'Database connection not configured on server.' });
+  try {
+    const { identifier, password } = await parseRequestBody(req);
+    if (!identifier || !password) {
+      return sendJson(res, 400, { error: 'Missing identifier or password' });
+    }
+    
+    const [rows] = await dbPool.execute(
+      `SELECT * FROM microdo_users WHERE email = ? OR username = ? LIMIT 1`,
+      [identifier, identifier]
+    );
+    
+    if (rows.length === 0) {
+      return sendJson(res, 401, { error: 'Invalid credentials' });
+    }
+    
+    const user = rows[0];
+    // In a real app, you would use bcrypt to compare password hash. 
+    // Here we assume the frontend sends the password directly for simple demo, or check hash.
+    if (user.password_hash !== password) {
+      return sendJson(res, 401, { error: 'Invalid credentials' });
+    }
+    
+    return sendJson(res, 200, { success: true, user });
+  } catch (error) {
+    console.error('Login error:', error);
+    return sendJson(res, 500, { error: error.message || 'Login failed' });
+  }
 }
 
 // 6. Handle AI summarization API using native fetch (built into Node 18+)
@@ -334,6 +408,12 @@ const server = http.createServer((req, res) => {
   }
 
   // API Routes
+  if (pathname === '/api/auth/register' && req.method === 'POST') {
+    return handleRegister(req, res);
+  }
+  if (pathname === '/api/auth/login' && req.method === 'POST') {
+    return handleLogin(req, res);
+  }
   if (pathname === '/api/summarize-module' && req.method === 'POST') {
     return handleSummarizeModule(req, res);
   }

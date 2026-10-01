@@ -1,5 +1,5 @@
 import React from 'react';
-import { Upload, RotateCcw, Layers, UserCircle } from 'lucide-react';
+import { Upload, RotateCcw, Layers, Flame } from 'lucide-react';
 import { ProgressOverview } from './ProgressOverview';
 import { StudyModuleNode, ScholarUser } from '../types';
 
@@ -28,6 +28,24 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenUploadModal,
   onResetFlow,
 }) => {
+  // Archetype Bonus Logic
+  const getArchetypeBonus = (archetype?: string) => {
+    if (!archetype) return null;
+    const hour = new Date().getHours();
+    if (archetype === 'midnight_owl' && (hour >= 1 && hour <= 4)) {
+      return { label: 'Night-Owl Bonus Active (1.5x XP)', color: 'bg-purple-100 text-purple-800 border-purple-200' };
+    }
+    if (archetype === 'dawn_sentinel' && (hour >= 5 && hour <= 8)) {
+      return { label: 'Dawn-Sentinel Bonus Active (1.5x XP)', color: 'bg-amber-100 text-amber-800 border-amber-200' };
+    }
+    if (archetype === 'caffeine_alchemist') {
+      return { label: 'Caffeine Rush Active', color: 'bg-orange-100 text-orange-800 border-orange-200' };
+    }
+    return null;
+  };
+  
+  const bonus = getArchetypeBonus(currentUser?.archetype);
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 flex items-center justify-between shadow-xs gap-2 sm:gap-3">
       {/* Left: Wordmark / Brand */}
@@ -63,6 +81,21 @@ export const Header: React.FC<HeaderProps> = ({
           completedArtifactIds={completedArtifactIds}
           onSelectModule={onSelectModule}
         />
+
+        {/* Scholar Archetype Study Stats */}
+        {currentUser && (
+          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs">
+            <div className="flex items-center gap-1 font-mono font-medium text-orange-600">
+              <Flame className="w-3.5 h-3.5 text-orange-500" />
+              <span>3 Day Streak</span>
+            </div>
+            {bonus && (
+              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border ${bonus.color}`}>
+                {bonus.label}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="h-4 w-px bg-slate-200 hidden sm:block mx-0.5" />
 

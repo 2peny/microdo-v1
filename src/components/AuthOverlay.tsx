@@ -29,7 +29,7 @@ interface AuthOverlayProps {
   initialMode?: 'login' | 'register';
 }
 
-type AuthMode = 'login' | 'register' | 'database';
+type AuthMode = 'login' | 'register';
 
 export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   isOpen,
@@ -56,7 +56,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
-  const [copiedSql, setCopiedSql] = useState(false);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -174,25 +174,6 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     }, 450);
   };
 
-  const handleCopySql = () => {
-    const sqlScript = `-- MicroDo Database Schema (MySQL / MariaDB / PostgreSQL / phpMyAdmin)
-CREATE TABLE IF NOT EXISTS microdo_users (
-  id VARCHAR(64) PRIMARY KEY,
-  username VARCHAR(64) NOT NULL UNIQUE,
-  email VARCHAR(191) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  full_name VARCHAR(128) NOT NULL,
-  archetype VARCHAR(64) NOT NULL DEFAULT 'midnight_owl',
-  avatar_emoji VARCHAR(16) NOT NULL DEFAULT '🦉',
-  major_focus VARCHAR(128) NOT NULL DEFAULT 'Computer Science',
-  role VARCHAR(32) NOT NULL DEFAULT 'scholar',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;`;
-
-    navigator.clipboard.writeText(sqlScript);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2000);
-  };
 
   return (
     <div
@@ -233,7 +214,6 @@ CREATE TABLE IF NOT EXISTS microdo_users (
                 <h2 id="auth-modal-title" className="text-lg sm:text-xl font-bold tracking-tight text-white font-sans">
                   {mode === 'login' && 'Sign In to Study Station'}
                   {mode === 'register' && 'Forge Scholar Passport'}
-                  {mode === 'database' && 'Relational Database & phpMyAdmin'}
                 </h2>
               </div>
             </div>
@@ -271,20 +251,6 @@ CREATE TABLE IF NOT EXISTS microdo_users (
               }`}
             >
               Register New Scholar
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('database'); setErrorMsg(null); }}
-              className={`py-1.5 px-2.5 rounded-lg font-medium transition-all text-center cursor-pointer flex items-center gap-1.5 ${
-                mode === 'database'
-                  ? 'bg-indigo-600 text-white shadow-sm font-semibold'
-                  : 'text-indigo-200 hover:text-white'
-              }`}
-              title="View & Download SQL Schema for MySQL / phpMyAdmin / PostgreSQL"
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">phpMyAdmin SQL</span>
-              <span className="sm:hidden">SQL</span>
             </button>
           </div>
         </div>
@@ -330,73 +296,8 @@ CREATE TABLE IF NOT EXISTS microdo_users (
             )}
           </AnimatePresence>
 
-          {/* MODE: DATABASE & PHPMYADMIN OVERVIEW */}
-          {mode === 'database' ? (
-            <div className="space-y-4 text-xs text-slate-700">
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-4 h-4 text-indigo-600" />
-                    <h3 className="font-semibold text-slate-900 text-sm">
-                      phpMyAdmin & Relational Database Integration
-                    </h3>
-                  </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono text-[10px] font-semibold">
-                    Universal ANSI-SQL
-                  </span>
-                </div>
-                <p className="text-slate-600 leading-relaxed">
-                  This database schema works out-of-the-box on <strong>MySQL 5.7/8.0+</strong>, <strong>MariaDB 10+</strong>, and <strong>PostgreSQL</strong>. You can inspect and edit all users, courses, and study modules directly in your phpMyAdmin web dashboard.
-                </p>
-              </div>
-
-              {/* Step by step import instructions */}
-              <div className="border border-slate-200 rounded-xl p-3.5 space-y-2">
-                <h4 className="font-semibold text-slate-900 text-xs flex items-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5 text-slate-600" />
-                  How to deploy in 30 seconds via phpMyAdmin:
-                </h4>
-                <ol className="list-decimal list-inside space-y-1 text-slate-600 pl-1 leading-relaxed">
-                  <li>Open your <strong>phpMyAdmin</strong> panel (e.g. cPanel, XAMPP, or Cloud SQL).</li>
-                  <li>Click on your database or create a new one (e.g. <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-700">microdo_db</code>).</li>
-                  <li>Click the top <span className="font-semibold text-slate-800">"Import"</span> tab.</li>
-                  <li>Choose the <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-700">schema.sql</code> file below, and click <span className="font-semibold text-slate-800">"Go"</span>.</li>
-                  <li>All 7 relational tables &amp; starter demo scholars are immediately provisioned!</li>
-                </ol>
-              </div>
-
-              {/* Actions: Download / Copy */}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <a
-                  href="/schema.sql"
-                  download="microdo_schema.sql"
-                  className="flex-1 min-w-[140px] flex items-center justify-center gap-2 py-2 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-xs transition-colors cursor-pointer text-center"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download schema.sql</span>
-                </a>
-
-                <button
-                  type="button"
-                  onClick={handleCopySql}
-                  className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium transition-colors cursor-pointer"
-                >
-                  {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedSql ? 'Copied SQL' : 'Copy Sample SQL'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors cursor-pointer"
-                >
-                  Back to Login
-                </button>
-              </div>
-            </div>
-          ) : (
-            /* FORM: LOGIN OR REGISTER */
-            <form onSubmit={handleSubmit} className="space-y-4">
+          {/* FORM: LOGIN OR REGISTER */}
+          <form onSubmit={handleSubmit} className="space-y-4">
               {/* Quick Persona Fillers for Instant Testing */}
               <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80">
                 <div className="flex items-center justify-between mb-1.5">
@@ -646,7 +547,6 @@ CREATE TABLE IF NOT EXISTS microdo_users (
                 </button>
               </div>
             </form>
-          )}
         </div>
 
         {/* Current Active User Status Bar (If user is logged in) */}
