@@ -83,19 +83,24 @@ function splitIntoSections(text: string): { title: string; content: string }[] {
 
   const isHeading = (line: string): string | null => {
     const trimmed = line.trim();
-    if (!trimmed) return null;
+    if (!trimmed || trimmed.length > 100) return null;
 
     // Markdown headers
     const mdMatch = trimmed.match(/^#{1,4}\s+(.+)$/);
     if (mdMatch) return mdMatch[1].trim();
 
-    // "Section 1: ...", "Chapter 2: ...", "1. Topic Name"
-    const numMatch = trimmed.match(/^(?:(?:\d+[\.\)])|(?:Section\s+\d+[:\-]|\bPart\s+\d+[:\-]|\bTopic\s+\d+[:\-]))\s*(.+)$/i);
-    if (numMatch && trimmed.length < 80) return numMatch[1].trim();
+    // Chapter, Section, Topic, Unit, Module
+    const chapterMatch = trimmed.match(/^(?:Chapter|Section|Topic|Unit|Module|Part)\s+\d+(?:[\.:\-]\s*(.+))?$/i);
+    if (chapterMatch) return chapterMatch[1] ? chapterMatch[1].trim() : trimmed;
 
-    // Bold title lines
-    const boldMatch = trimmed.match(/^\*\*([^*]+)\*\*$/);
-    if (boldMatch && boldMatch[1].length < 70) return boldMatch[1].trim();
+    // 1. Topic Name, 1.1 Topic Name
+    const numMatch = trimmed.match(/^(\d+(?:\.\d+)*)[\.\)]\s*(.+)$/);
+    if (numMatch && numMatch[2].length > 3) return `${numMatch[1]} ${numMatch[2].trim()}`;
+
+    // ALL CAPS Titles
+    if (trimmed === trimmed.toUpperCase() && trimmed.length > 5 && !trimmed.includes('.') && trimmed.split(' ').length < 8) {
+        return trimmed;
+    }
 
     return null;
   };
@@ -107,7 +112,7 @@ function splitIntoSections(text: string): { title: string; content: string }[] {
     if (heading) {
       if (currentTitle || currentLines.length > 0) {
         sections.push({
-          title: currentTitle || 'Core Concepts',
+          title: currentTitle || 'Introduction',
           content: currentLines,
         });
       }
@@ -120,41 +125,39 @@ function splitIntoSections(text: string): { title: string; content: string }[] {
 
   if (currentTitle || currentLines.length > 0) {
     sections.push({
-      title: currentTitle || 'Foundational Principles',
+      title: currentTitle || 'Conclusion',
       content: currentLines,
     });
   }
 
   const validSections = sections
     .map((s) => ({
-      title: s.title.replace(/^[\d\.\-\s]+/, '').trim(),
+      title: s.title.replace(/^[\d\.\-\s]+/, '').trim() || s.title,
       content: s.content.join('\n').trim(),
     }))
-    .filter((s) => s.content.length > 40 || s.title.length > 3);
+    .filter((s) => s.content.length > 20 || s.title.length > 3);
 
-  if (validSections.length >= 2) {
+  if (validSections.length > 0) {
     return validSections;
   }
 
-  // Fallback: Split by double newline paragraphs with informative content
+  // Fallback: Split by large chunks if no headers found
   const paragraphs = text
     .split(/\n\s*\n/)
     .map((p) => p.trim())
-    .filter((p) => p.length > 50);
+    .filter((p) => p.length > 30);
 
-  if (paragraphs.length >= 2) {
-    return paragraphs.map((para, i) => {
-      const firstLine = para.split('\n')[0].replace(/^#+\s*/, '').trim();
-      const firstSentence = firstLine.split('.')[0];
-      const titleCandidate = firstSentence.length < 60 ? firstSentence : `Part ${i + 1}: ${firstSentence.slice(0, 45)}...`;
-      return {
-        title: titleCandidate,
-        content: para,
-      };
-    });
+  // Group paragraphs into chunks of ~3-4 paragraphs to represent "Topics"
+  const chunks = [];
+  for (let i = 0; i < paragraphs.length; i += 4) {
+      const chunkParas = paragraphs.slice(i, i + 4);
+      const chunkText = chunkParas.join('\n\n');
+      const firstLine = chunkParas[0].split('\n')[0];
+      const titleCandidate = firstLine.length < 60 ? firstLine : `Section ${Math.floor(i/4) + 1}`;
+      chunks.push({ title: titleCandidate, content: chunkText });
   }
 
-  return [];
+  return chunks;
 }
 
 // Detect domain type from text content
@@ -213,10 +216,10 @@ export function extractAcademicStudyGuide(
   const rawSentences = firstParagraph.split(/(?<=[.?!])\s+/).filter((s) => s.length > 20);
   const summary = rawSentences.slice(0, 2).join(' ') || `${title}: comprehensive study analysis covering foundational principles and practical applications.`;
 
-  // Detect sections
+  // Detect sections - keep all of them, don't limit to 4
   const detectedSections = splitIntoSections(cleanedText);
-  const sectionsToUse = detectedSections.length >= 2 ? detectedSections.slice(0, 4) : [
-    { title: `${title} - Core Principles`, content: cleanedText },
+  const sectionsToUse = detectedSections.length > 0 ? detectedSections : [
+    { title: `${title} - Core Content`, content: cleanedText },
   ];
 
   const domain = detectDomain(cleanedText);
@@ -224,117 +227,78 @@ export function extractAcademicStudyGuide(
   const topics: ParsedTopic[] = sectionsToUse.map((sec, idx) => {
     const secTitle = sec.title;
     const secContent = sec.content;
-    const secLines = secContent.split('\n').map((l) => l.trim()).filter((l) => l.length > 10);
-    const secSentences = secContent.split(/(?<=[.?!])\s+/).filter((s) => s.length > 20);
+    const secLines = secContent.split('\n').map((l) => l.trim()).filter(Boolean);
+    const secSentences = secContent.split(/(?<=[.?!])\s+/).filter(Boolean);
 
     // 1. OBJECTIVE
-    const conceptObjective = `Master the fundamental definitions, mechanisms, and real-world implications of ${secTitle}.`;
+    const conceptObjective = `Read and comprehend: ${secTitle}.`;
 
-    // 2. DETAILED OVERVIEW (Markdown Notes with real text)
-    const bulletItems = secLines
-      .slice(0, 5)
-      .map((l) => (l.startsWith('-') || l.startsWith('*') ? l : `- ${l}`))
-      .join('\n');
+    // 2. DETAILED OVERVIEW (Actual text from document)
+    // We provide the actual section content as the reading material, no fake summaries.
+    const readingMaterial = secContent;
 
-    const overviewMarkdown = `## ${secTitle}
+    const overviewMarkdown = `## ${secTitle}\n\n${readingMaterial}`;
 
-${secSentences.slice(0, 3).join(' ')}
-
-### Key Points & Core Mechanisms:
-${bulletItems || `- ${secTitle} forms an essential component of this study unit.\n- Review the foundational definitions and boundary conditions.\n- Note the interaction between this concept and overall module goals.`}
-
-### Study & Exam Takeaway:
-${secSentences[3] ? `> "${secSentences[3].trim()}"` : `Focus on the exact distinctions and terminology outlined in ${secTitle} for upcoming assessments.`}`;
-
-    // 3. WORKED EXAMPLE (Domain-Adapted, strictly NO slop)
+    // 3. WORKED EXAMPLE (Extract actual code or lists, or just provide deeper body content)
     let workedExample = '';
     const codeBlockMatch = secContent.match(/```(?:\w+)?\n([\s\S]*?)```/);
 
     if (codeBlockMatch) {
-      workedExample = `// Practical Code Example: ${secTitle}\n// Sourced directly from course notes:\n\n${codeBlockMatch[1].trim()}`;
-    } else if (domain === 'code') {
-      const funcName = secTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 20) || 'processData';
-      workedExample = `// Practical Code Example: ${secTitle}
-// Implements core concept logic using verified inputs and outputs
-
-function ${funcName}(inputData: string[]): { count: number; results: string[] } {
-  console.log("Executing ${secTitle} pipeline...");
-  
-  // 1. Filter and normalize active items
-  const validItems = inputData.filter(item => item && item.trim().length > 0);
-  
-  // 2. Process transformation according to module rules
-  const results = validItems.map(item => item.toUpperCase());
-  
-  return {
-    count: results.length,
-    results: results
-  };
-}
-
-// Sample execution:
-const sampleInput = ["${secTitle}", "Standard Operation", "Verified Output"];
-const executionResult = ${funcName}(sampleInput);
-console.log("Result:", executionResult);`;
-    } else if (domain === 'math_science') {
-      // Find numbers or formulas in text
-      const formulaMatch = secContent.match(/([A-Za-z0-9_+\-\s\^]+=[^.\n]+)/);
-      const eqText = formulaMatch ? formulaMatch[1].trim() : `Relationship for ${secTitle}`;
-
-      workedExample = `### Quantitative Problem & Step-by-Step Solution
-
-**Problem Context:**
-Applying the principles of **${secTitle}** to solve a specific quantitative or biochemical question.
-
-**Relevant Formula / Principle:**
-\`${eqText}\`
-
-**Step-by-Step Solution:**
-1. **Identify Given Variables:**
-   - Primary Subject: \`${secTitle}\`
-   - Active Parameters: Derived directly from the lesson text.
-2. **Formula Application:**
-   - Substitute the initial conditions into the core relationship.
-   - Evaluate intermediate state transitions:
-     \`Step 1 -> Initialize base values\`
-     \`Step 2 -> Apply direct transformation based on lesson data\`
-3. **Final Result:**
-   - Verified state confirmed in accordance with the course documentation.`;
+      workedExample = `### Code Snippet from Document:\n\n\`\`\`\n${codeBlockMatch[1].trim()}\n\`\`\``;
     } else {
-      // Humanities / Business / General Text: Concrete applied scenario / case study
-      workedExample = `### Practical Application & Case Scenario
-
-**Context:**
-Understanding how **${secTitle}** operates in an applied real-world or historical environment.
-
-**Concrete Scenario:**
-Consider an applied case involving the core ideas of *${secTitle}*. When practitioners or scholars encounter this situation:
-- ${secSentences[0] || `The initial condition requires recognizing key factors associated with ${secTitle}.`}
-- ${secSentences[1] || `Next, the direct implications of the principle are evaluated against practical constraints.`}
-
-**Applied Analysis:**
-${secSentences[2] || `By applying the core thesis of this section, decision-makers are able to distinguish between foundational requirements and secondary outcomes.`}
-
-**Takeaway:**
-This demonstrates that **${secTitle}** is not merely theoretical; it directly informs how outcomes are analyzed and resolved in practice.`;
+      // Find a bulleted list or just take a paragraph from the middle as a "Key Excerpt"
+      const listMatch = secContent.match(/(?:^[-*]\s+.+\n?){2,}/m);
+      if (listMatch) {
+          workedExample = `### Key List from Document:\n\n${listMatch[0]}`;
+      } else {
+          const middleIndex = Math.floor(secSentences.length / 2);
+          const excerpt = secSentences.slice(middleIndex, middleIndex + 3).join(' ');
+          workedExample = `### Key Excerpt\n\n> "${excerpt}"`;
+      }
     }
 
-    // 4. PRACTICE QUIZ (Derived from actual sentences in text)
-    const testedSentence = secSentences.find((s) => s.length > 30 && s.length < 180) || secLines[0] || `${secTitle} governs core concepts in this section.`;
-    const examQuestion = `According to the module text on "${secTitle}", which of the following statements is correct?`;
+    // 4. PRACTICE QUIZ (Derived directly from actual text sentences to ensure truth)
+    let testedSentence = secSentences.find((s) => s.length > 40 && s.length < 150 && !s.includes('?') && !s.includes('!')) || secLines[0] || `${secTitle} is covered in this section.`;
+    testedSentence = testedSentence.replace(/^[-*#\d\.\s]+/, '').trim();
+    
+    let examQuestion = '';
+    let quizOptions: string[] = [];
+    
+    // Alternate between Fill-in-the-blank and True/False/Multiple Choice
+    if (idx % 2 === 0) {
+      // Fill in the blank
+      const wordsInSentence = testedSentence.split(' ');
+      let blankWord = wordsInSentence.length > 5 ? wordsInSentence[Math.floor(wordsInSentence.length / 2)] : 'concept';
+      blankWord = blankWord.replace(/[.,;:]/g, '');
+      
+      // Find real distractor words from the text instead of fake ones
+      const allWords = cleanedText.split(/\s+/).filter(w => w.length > 4 && !w.includes(blankWord));
+      const distractor1 = allWords[Math.floor(Math.random() * allWords.length)] || 'factor';
+      const distractor2 = allWords[Math.floor(Math.random() * allWords.length)] || 'process';
+      const distractor3 = allWords[Math.floor(Math.random() * allWords.length)] || 'variable';
+      
+      examQuestion = `Fill in the blank from the text: "${testedSentence.replace(blankWord, '______')}"`;
+      quizOptions = [
+        blankWord,
+        distractor1.replace(/[.,;:]/g, ''),
+        distractor2.replace(/[.,;:]/g, ''),
+        distractor3.replace(/[.,;:]/g, ''),
+      ];
+    } else {
+      // Multiple Choice / True statement identification
+      examQuestion = `Based on the section "${secTitle.slice(0, 20)}...", which of the following statements is directly supported by the text?`;
+      quizOptions = [
+        testedSentence,
+        `The concepts discussed here operate entirely independently of any external factors or principles.`,
+        `This section concludes that the foundational rules do not apply in practical scenarios.`,
+        `None of the above statements are supported by the text.`,
+      ];
+    }
 
-    const correctOption = testedSentence.replace(/^[-*#\d\.\s]+/, '').trim();
-    const quizOptions = [
-      correctOption,
-      `It operates entirely outside the defined framework and requires no prerequisite conditions.`,
-      `It is purely optional and is contradicted by other primary materials in the course.`,
-      `It only applies under hypothetical edge cases that never occur in real practice.`,
-    ];
-
-    const quizExplanation = `The text explicitly states: "${correctOption}". This directly confirms option 1 as the correct answer, while the other options represent incorrect generalizations.`;
+    const quizExplanation = `The original text states: "${testedSentence}".`;
 
     return {
-      topicName: `${idx + 1}. ${secTitle}`,
+      topicName: `${idx + 1}. ${secTitle.length > 40 ? secTitle.slice(0,40)+'...' : secTitle}`,
       conceptObjective,
       overview: overviewMarkdown,
       workedExample,
