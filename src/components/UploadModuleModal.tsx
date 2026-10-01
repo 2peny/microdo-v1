@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Upload, Sparkles, BookOpen, Loader2 } from 'lucide-react';
+import { X, Upload, Sparkles, BookOpen, Loader2, CheckCircle2, FileText } from 'lucide-react';
 import { StudyModuleNode } from '../types';
+import { extractAcademicStudyGuide } from '../utils/academicParser';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
@@ -51,7 +52,9 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
   const [courseTitle, setCourseTitle] = useState('');
   const [courseCode, setCourseCode] = useState('');
   const [rawText, setRawText] = useState('');
+  const [uploadedFileName, setUploadedFileName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState('Analyzing course material...');
   const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
@@ -61,6 +64,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     setCourseTitle(sample.title);
     setCourseCode(sample.code);
     setRawText(sample.raw);
+    setUploadedFileName('');
     setErrorMsg('');
   };
 
@@ -68,9 +72,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!courseTitle) {
-      setCourseTitle(file.name.replace(/\.[^/.]+$/, ''));
-    }
+    setUploadedFileName(file.name);
     setErrorMsg('');
 
     try {
@@ -90,13 +92,33 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
         const result = await mammoth.extractRawText({ arrayBuffer });
         content = result.value;
       } else if (lowerName.endsWith('.doc')) {
-        alert('Warning: .doc files are a legacy binary format and might not parse correctly. Please convert to .docx or .pdf for best results.');
         content = await file.text();
       } else {
         content = await file.text();
       }
 
       setRawText(content);
+
+      // Auto-detect title from document heading if not already specified
+      if (!courseTitle) {
+        const headingMatch = content.match(/^#{1,3}\s+(.+)$/m) || content.match(/^(?:Title|Module|Lecture|Chapter)\s*[:\-]\s*(.+)$/im);
+        if (headingMatch && headingMatch[1].trim().length > 3) {
+          setCourseTitle(headingMatch[1].trim());
+        } else {
+          setCourseTitle(file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '));
+        }
+      }
+
+      // Auto-detect course code if not specified
+      if (!courseCode) {
+        const codeMatch = content.match(/\b([A-Z]{2,5}[ -]?\d{2,4}[A-Z]?)\b/);
+        const chapterMatch = content.match(/\b(Lecture\s+\d+|Chapter\s+\d+|Week\s+\d+|Unit\s+\d+)\b/i);
+        if (codeMatch && chapterMatch) {
+          setCourseCode(`${codeMatch[1]} · ${chapterMatch[1]}`);
+        } else if (codeMatch) {
+          setCourseCode(codeMatch[1]);
+        }
+      }
     } catch (err: any) {
       console.error('Error parsing file:', err);
       setErrorMsg('Failed to parse document: ' + err.message);
@@ -110,10 +132,11 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     }
 
     setIsProcessing(true);
+    setProcessingStatus('Analyzing uploaded curriculum & extracting key topics...');
     setErrorMsg('');
 
     try {
-      // 1. Try server API
+      // 1. Try server API with gemini-3.8-flash
       let structuredData: any = null;
       try {
         const res = await fetch('/api/summarize-module', {
@@ -135,142 +158,92 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
         console.warn('Server API failed or offline, falling back to local academic parser:', err);
       }
 
-      // 2. Client-side smart parser fallback
+      // 2. Client-side smart academic parser fallback
       if (!structuredData || !structuredData.topics || structuredData.topics.length === 0) {
-        const titleFinal = courseTitle.trim() || 'Uploaded Course Module';
-        const codeFinal = courseCode.trim() || 'ACAD-101 · Notes';
-
-        structuredData = {
-          prefix: `// Module: ${titleFinal.slice(0, 24)}`,
-          title: titleFinal,
-          courseCode: codeFinal,
-          estimatedHours: '3.0 hrs study',
-          summary: rawText.slice(0, 160).trim() + '...',
-          syllabusFilename: `${titleFinal.toLowerCase().replace(/[^a-z0-9]/g, '-')}-syllabus.md`,
-          blueHeading: `Key Topics & Syllabus: ${titleFinal}`,
-          topics: [
-            {
-              topicName: '1. Core Theoretical Foundations & Principles',
-              conceptObjective: 'Master fundamental definitions and axiomatic behavior.',
-              overview: `# Core Foundations\n\n- Key principle: ${rawText.slice(0, 200)}...\n\n### Primary Rules:\n1. Maintain strict state invariants.\n2. Prevent latency bottlenecks and resource thrashing.`,
-              workedExample: `// Theoretical Calculation & Verification\nconst inputData = "${titleFinal}";\nconsole.log("Analyzing parameters for: " + inputData);\n// Expected throughput: O(N log N)`,
-              examQuestion: `What is the primary constraint governing ${titleFinal}?`,
-              quizOptions: [
-                'Time complexity scaling and boundary conditions',
-                'Arbitrary memory duplication',
-                'Linear degradation with zero recovery',
-                'Unchecked asynchronous race conditions',
-              ],
-              correctOptionIndex: 0,
-              quizExplanation: 'Mathematical and physical bounds enforce strict scaling limits under asymptotic analysis.',
-            },
-            {
-              topicName: '2. Algorithmic Mechanics & Implementation',
-              conceptObjective: 'Understand runtime state transitions and data structures.',
-              overview: `# Algorithmic Breakdown\n\n${rawText.slice(150, 400) || 'Detailed step-by-step logic and operational rules.'}`,
-              workedExample: `// Implementation Walkthrough\nfunction solveCase(input: string) {\n  // Step 1: Precompute lookup states\n  // Step 2: Iterate across bounds\n  return { status: "Verified", input };\n}`,
-              examQuestion: 'Which data structure offers the optimal tradeoff for this mechanism?',
-              quizOptions: [
-                'Balanced Search Tree / Priority Queue',
-                'Unsorted Linked List',
-                'Global Shared Variable',
-                'Static Fixed Buffer',
-              ],
-              correctOptionIndex: 0,
-              quizExplanation: 'Logarithmic lookup and balanced indexing ensure minimal latency across high working sets.',
-            },
-            {
-              topicName: '3. Failure Modes & Exam Checklist',
-              conceptObjective: 'Recognize edge cases, worst-case latency, and exam traps.',
-              overview: `# High-Yield Exam Takeaways\n\n- Review edge conditions\n- Watch for off-by-one errors\n- Ensure memory reclamation and consistency`,
-              workedExample: `// Worst-Case Scenario Analysis\n// When input is already reversed or partitioned poorly:\n// Degrades from optimal to worst-case boundary.`,
-              examQuestion: 'What common pitfall must students avoid during exam problems on this topic?',
-              quizOptions: [
-                'Failing to verify base conditions and boundary thresholds',
-                'Writing too many comments',
-                'Using standard mathematical notation',
-                'Optimizing for O(1) space',
-              ],
-              correctOptionIndex: 0,
-              quizExplanation: 'Neglecting boundary conditions and empty/null states is the leading source of point deductions in technical exams.',
-            },
-          ],
-        };
+        setProcessingStatus('Extracting concepts, worked examples, and review questions...');
+        structuredData = extractAcademicStudyGuide(rawText, courseTitle, courseCode);
       }
 
       // 3. Assemble StudyModuleNode
+      const finalTitle = structuredData.title || courseTitle || 'Uploaded Course Module';
+      const finalPrefix = structuredData.prefix || `// Module: ${finalTitle.slice(0, 24)}`;
+      const finalCode = structuredData.courseCode || courseCode || 'Custom Notes';
+
       const newModule: StudyModuleNode = {
         id: `mod-${Date.now()}`,
-        prefix: structuredData.prefix || `// Module: ${courseTitle || 'New Study Unit'}`,
-        title: structuredData.title || courseTitle || 'Uploaded Course Module',
-        courseCode: structuredData.courseCode || courseCode || 'Custom Notes',
-        estimatedHours: structuredData.estimatedHours || '3.5 hrs study',
-        summary: structuredData.summary || rawText.slice(0, 150) + '...',
+        prefix: finalPrefix,
+        title: finalTitle,
+        courseCode: finalCode,
+        estimatedHours: structuredData.estimatedHours || '3.0 hrs study',
+        summary: structuredData.summary || rawText.slice(0, 160).trim() + '...',
         lines: [{ width: '90%' }, { width: '65%' }, { width: '80%' }, { width: '45%' }],
         blueRoadmap: {
           filename: structuredData.syllabusFilename || 'module-syllabus.md',
-          heading: structuredData.blueHeading || 'Key Topics of What Needs to Be Learnt',
+          heading: structuredData.blueHeading || `Key Topics & Roadmap: ${finalTitle}`,
           description: `Master these ${structuredData.topics.length} core topics extracted from your course materials.`,
-          topics: structuredData.topics.map((t: any, idx: number) => ({
-            id: `topic-${Date.now()}-${idx}`,
-            topicName: t.topicName,
-            objective: t.conceptObjective,
-            lines: [
-              { width: '90%', highlight: true },
-              { width: '70%' },
-              { width: '80%' },
-            ],
-            artifacts: [
-              {
-                id: `art-ov-${Date.now()}-${idx}`,
-                type: 'overview',
-                path: `topic-${idx + 1}-overview.md`,
-                title: 'Key Concept & Rules',
-                tagline: 'Concise theoretical overview',
-                lines: [{ width: '92%' }, { width: '75%' }, { width: '82%' }],
-                overviewMarkdown: t.overview,
-                workedExamplesMarkdown: t.workedExample,
-                quizData: {
-                  question: t.examQuestion,
-                  options: t.quizOptions,
-                  correctIndex: t.correctOptionIndex,
-                  explanation: t.quizExplanation,
+          topics: structuredData.topics.map((t: any, idx: number) => {
+            const topicSlug = t.topicName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || `topic-${idx + 1}`;
+            return {
+              id: `topic-${Date.now()}-${idx}`,
+              topicName: t.topicName,
+              objective: t.conceptObjective || `Master the principles and applications of ${t.topicName}.`,
+              lines: [
+                { width: '90%', highlight: true },
+                { width: '70%' },
+                { width: '80%' },
+              ],
+              artifacts: [
+                {
+                  id: `art-ov-${Date.now()}-${idx}`,
+                  type: 'overview' as const,
+                  path: `${topicSlug}-overview.md`,
+                  title: 'Key Concept & Rules',
+                  tagline: 'Distilled principles, definitions, and mental models',
+                  lines: [{ width: '92%' }, { width: '75%' }, { width: '82%' }],
+                  overviewMarkdown: t.overview,
+                  workedExamplesMarkdown: t.workedExample,
+                  quizData: {
+                    question: t.examQuestion,
+                    options: t.quizOptions,
+                    correctIndex: t.correctOptionIndex,
+                    explanation: t.quizExplanation,
+                  },
                 },
-              },
-              {
-                id: `art-ex-${Date.now()}-${idx}`,
-                type: 'examples',
-                path: `topic-${idx + 1}-worked-example.ts`,
-                title: 'Worked Examples & Code',
-                tagline: 'Step-by-step problem solution',
-                lines: [{ width: '88%' }, { width: '65%' }, { width: '75%' }],
-                overviewMarkdown: t.overview,
-                workedExamplesMarkdown: t.workedExample,
-                quizData: {
-                  question: t.examQuestion,
-                  options: t.quizOptions,
-                  correctIndex: t.correctOptionIndex,
-                  explanation: t.quizExplanation,
+                {
+                  id: `art-ex-${Date.now()}-${idx}`,
+                  type: 'examples' as const,
+                  path: `${topicSlug}-worked-example.ts`,
+                  title: 'Worked Examples & Code',
+                  tagline: 'Step-by-step problem solution and verification',
+                  lines: [{ width: '88%' }, { width: '65%' }, { width: '75%' }],
+                  overviewMarkdown: t.overview,
+                  workedExamplesMarkdown: t.workedExample,
+                  quizData: {
+                    question: t.examQuestion,
+                    options: t.quizOptions,
+                    correctIndex: t.correctOptionIndex,
+                    explanation: t.quizExplanation,
+                  },
                 },
-              },
-              {
-                id: `art-qz-${Date.now()}-${idx}`,
-                type: 'quiz',
-                path: `topic-${idx + 1}-exam-quiz.md`,
-                title: 'Exam Review & Self-Check',
-                tagline: 'High-yield practice test question',
-                lines: [{ width: '94%' }, { width: '80%' }, { width: '60%' }],
-                overviewMarkdown: t.overview,
-                workedExamplesMarkdown: t.workedExample,
-                quizData: {
-                  question: t.examQuestion,
-                  options: t.quizOptions,
-                  correctIndex: t.correctOptionIndex,
-                  explanation: t.quizExplanation,
+                {
+                  id: `art-qz-${Date.now()}-${idx}`,
+                  type: 'quiz' as const,
+                  path: `${topicSlug}-exam-quiz.json`,
+                  title: 'Exam Review & Self-Check',
+                  tagline: 'High-yield practice quiz challenge',
+                  lines: [{ width: '94%' }, { width: '80%' }, { width: '60%' }],
+                  overviewMarkdown: t.overview,
+                  workedExamplesMarkdown: t.workedExample,
+                  quizData: {
+                    question: t.examQuestion,
+                    options: t.quizOptions,
+                    correctIndex: t.correctOptionIndex,
+                    explanation: t.quizExplanation,
+                  },
                 },
-              },
-            ],
-          })),
+              ],
+            };
+          }),
         },
       };
 
@@ -283,27 +256,30 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     }
   };
 
+  const wordCount = rawText.split(/\s+/).filter(Boolean).length;
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
         <motion.div
-          initial={{ opacity: 0, scale: 0.97, y: 10 }}
+          initial={{ opacity: 0, scale: 0.96, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.97, y: 10 }}
-          className="relative w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-xl overflow-hidden text-slate-800"
+          exit={{ opacity: 0, scale: 0.96, y: 15 }}
+          transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+          className="relative w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden my-8"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 shadow-xs">
+              <div className="p-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-700 shadow-xs">
                 <BookOpen className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900 font-sans">
-                  Upload Module into MicroDo
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Extracts purple module summaries, blue topic blueprints, and green study artifacts.
+                <h2 className="text-base font-bold text-slate-900 font-sans">
+                  Upload & Synthesize Course Module
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  MicroDo extracts real topics, concept overviews, worked code, and quizzes
                 </p>
               </div>
             </div>
@@ -311,68 +287,69 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors cursor-pointer border border-slate-200 shadow-xs"
+              aria-label="Close modal"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
           {/* Body */}
-          <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto font-sans text-xs">
-            {/* Quick preloaded samples */}
+          <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+            {/* Quick Sample Presets */}
             <div>
-              <span className="text-[11px] font-mono text-purple-800 font-bold block mb-1.5">
-                QUICK SAMPLES (TEST WITH 1-CLICK):
+              <span className="block text-[11px] font-mono text-slate-500 mb-1.5 font-semibold">
+                TRY WITH ACADEMIC PRESET:
               </span>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => handleLoadSample('ml')}
-                  className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-800 transition-colors font-mono cursor-pointer shadow-xs"
+                  className="px-2.5 py-1 rounded-md text-xs font-mono bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition-colors cursor-pointer"
                 >
-                  ⚡ Machine Learning: Attention
+                  Machine Learning (Attention)
                 </button>
                 <button
                   type="button"
                   onClick={() => handleLoadSample('distributed')}
-                  className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-800 transition-colors font-mono cursor-pointer shadow-xs"
+                  className="px-2.5 py-1 rounded-md text-xs font-mono bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
                 >
-                  ⚡ Distributed Systems: Raft
+                  Distributed Systems (Raft)
                 </button>
                 <button
                   type="button"
                   onClick={() => handleLoadSample('graphs')}
-                  className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-purple-50 border border-slate-200 hover:border-purple-300 text-slate-700 hover:text-purple-800 transition-colors font-mono cursor-pointer shadow-xs"
+                  className="px-2.5 py-1 rounded-md text-xs font-mono bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
                 >
-                  ⚡ Algorithms: Dijkstra
+                  Algorithms (Dijkstra)
                 </button>
               </div>
             </div>
 
-            {/* Inputs */}
+            {/* Inputs: Course Title & Code */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                  MODULE / BOOK TITLE
+                  MODULE TITLE (OPTIONAL)
                 </label>
                 <input
                   type="text"
                   value={courseTitle}
                   onChange={(e) => setCourseTitle(e.target.value)}
-                  placeholder="e.g. Cache Memory & Locality"
-                  className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 font-mono text-xs shadow-xs"
+                  placeholder="e.g. Distributed Consensus & Raft Protocol"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 text-xs font-sans shadow-xs"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                  COURSE CODE / CHAPTER
+                  COURSE / CHAPTER CODE (OPTIONAL)
                 </label>
                 <input
                   type="text"
                   value={courseCode}
                   onChange={(e) => setCourseCode(e.target.value)}
-                  placeholder="e.g. CS-6004 · Chapter 5"
-                  className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 font-mono text-xs shadow-xs"
+                  placeholder="e.g. CS-6824 · Chapter 8"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 text-xs font-mono shadow-xs"
                 />
               </div>
             </div>
@@ -380,7 +357,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
             {/* File Drop / Upload */}
             <div>
               <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                UPLOAD NOTES FILE (.txt, .md, .pdf, .docx)
+                UPLOAD NOTES FILE (.pdf, .docx, .txt, .md)
               </label>
               <div className="relative border-2 border-dashed border-slate-300 hover:border-purple-600 rounded-xl p-4 text-center bg-slate-50 transition-colors">
                 <input
@@ -391,7 +368,14 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
                 />
                 <Upload className="w-6 h-6 text-purple-600 mx-auto mb-1.5" />
                 <p className="text-xs text-slate-800 font-medium">
-                  Drop course material file here or click to browse
+                  {uploadedFileName ? (
+                    <span className="text-emerald-700 flex items-center justify-center gap-1 font-mono">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Loaded: {uploadedFileName}
+                    </span>
+                  ) : (
+                    'Drop course material file here or click to browse'
+                  )}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
                   Markdown, text notes, syllabus, PDF, or Word Docs (.docx)
@@ -401,11 +385,18 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
             {/* Raw Text Paste */}
             <div>
-              <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                OR PASTE LECTURE TEXT / SYLLABUS CONTENT
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-mono text-slate-600 font-semibold">
+                  OR PASTE LECTURE TEXT / SYLLABUS CONTENT
+                </label>
+                {wordCount > 0 && (
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {wordCount} words ({Math.round(rawText.length / 1024 * 10) / 10} KB)
+                  </span>
+                )}
+              </div>
               <textarea
-                rows={5}
+                rows={6}
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
                 placeholder="Paste course syllabus, lecture transcript, or textbook section here..."
@@ -423,7 +414,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
           {/* Footer */}
           <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 bg-slate-50">
             <span className="text-[11px] font-mono text-slate-500">
-              Generates MicroDo 3-tier cards automatically
+              Generates MicroDo 3-tier study cards
             </span>
 
             <div className="flex items-center gap-2">
@@ -444,13 +435,13 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
               >
                 {isProcessing ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Analyzing & Building Cards...</span>
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
+                    <span>{processingStatus}</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>Summarize into MicroDo</span>
+                    <Sparkles className="w-4 h-4 text-purple-300" />
+                    <span>Build Course Module</span>
                   </>
                 )}
               </button>
