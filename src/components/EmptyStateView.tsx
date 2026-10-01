@@ -32,7 +32,7 @@ export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="w-full max-w-4xl mx-auto flex flex-col items-center text-center py-6 px-4"
+      className="w-full max-w-4xl mx-auto flex flex-col items-center text-center py-2 px-4"
     >
       {/* Top Badge */}
 
@@ -45,7 +45,7 @@ export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
       </p>
 
       {/* Primary Action Buttons */}
-      <div className="flex flex-wrap items-center justify-center gap-3.5 mt-6 mb-8">
+      <div className="flex flex-wrap items-center justify-center gap-3.5 mt-4 mb-4">
         <button
           type="button"
           onClick={onOpenUploadModal}
@@ -67,14 +67,14 @@ export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
 
       {/* Learner Bulletin Board Illustration */}
       <div className="w-full max-w-2xl flex flex-col items-center">
-        <div className="w-full relative rounded-2xl overflow-hidden border border-slate-200/80 bg-linear-to-b from-white to-slate-50 shadow-sm p-4 sm:p-6 flex items-center justify-center min-h-[220px]">
+        <div className="w-full relative rounded-2xl overflow-hidden border border-slate-200/80 bg-linear-to-b from-white to-slate-50 shadow-sm p-3 sm:p-4 flex items-center justify-center min-h-[160px]">
           {!imgError ? (
             <img
               src={imgSrc}
               alt="Learner thoughtfully looking at a notice board deciding what to study"
               referrerPolicy="no-referrer"
               onError={handleImageError}
-              className="w-full max-h-[360px] object-contain rounded-xl"
+              className="w-full max-h-[220px] object-contain rounded-xl"
             />
           ) : (
             <div className="w-full py-12 flex flex-col items-center justify-center text-slate-400">
