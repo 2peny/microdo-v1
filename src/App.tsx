@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { EMPTY_STUDY_COURSE, INITIAL_STUDY_COURSES } from './data/initialStudyCourses';
+import React, { useState, useRef, useEffect } from 'react';
+import { EMPTY_STUDY_COURSE } from './data/initialStudyCourses';
 import { StudyDirectoryCourse, StudyModuleNode, StudyArtifact, ScholarUser } from './types';
 import { Header } from './components/Header';
 import { LeftCardsColumn } from './components/LeftCardsColumn';
@@ -14,6 +14,7 @@ import { UnloadConfirmModal } from './components/UnloadConfirmModal';
 import { AuthOverlay } from './components/AuthOverlay';
 import { FooterBar } from './components/FooterBar';
 import { getStoredUser, saveStoredUser } from './utils/authStorage';
+import { onScholarAuthStateChanged, validateFirestoreConnection } from './lib/firebase';
 import { Search, CheckCircle2, X, Sparkles, BookOpen, Bookmark, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -24,7 +25,14 @@ export default function App() {
       const saved = localStorage.getItem('microdo_courses');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // If the cached course is the dummy sample course, clean it for a production-ready workspace
+          if (parsed[0]?.id === 'cs-systems') {
+            localStorage.removeItem('microdo_courses');
+            return [EMPTY_STUDY_COURSE];
+          }
+          return parsed;
+        }
       }
     } catch {
       // Fallback
@@ -79,7 +87,24 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<ScholarUser | null>(() => getStoredUser());
   const [mobileActiveTab, setMobileActiveTab] = useState<'modules' | 'roadmap' | 'notes'>('roadmap');
 
-  const handleLoginSuccess = (user: ScholarUser) => {
+  useEffect(() => {
+    // Validate Firestore connection on app boot
+    validateFirestoreConnection().catch((err) => {
+      console.warn('Firestore initial boot check:', err);
+    });
+
+    // Listen to real Firebase auth changes across sessions
+    const unsubscribe = onScholarAuthStateChanged((user) => {
+      if (user) {
+        setCurrentUser(user);
+        saveStoredUser(user);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleLoginSuccess = (user: ScholarUser | null) => {
     setCurrentUser(user);
     saveStoredUser(user);
   };
@@ -102,17 +127,6 @@ export default function App() {
     ? activeModuleNode.blueRoadmap.topics.find((t) => t.id === activeTopicId) || null
     : null;
 
-  // Load Sample Course (Computer Systems)
-  const handleLoadSampleCourse = () => {
-    setCourses(INITIAL_STUDY_COURSES);
-    setSelectedModuleId(null);
-    setActiveTopicId(null);
-    try {
-      localStorage.setItem('microdo_courses', JSON.stringify(INITIAL_STUDY_COURSES));
-    } catch {
-      // Safe fallback
-    }
-  };
 
   // Reset to Clean Empty State
   const handleClearToEmptyState = () => {
@@ -159,17 +173,41 @@ export default function App() {
     setMobileActiveTab('notes');
   };
 
-  // Handle module created via Upload
+  // Handle modules created via Upload (supports single modules or 300-chapter books)
   const handleModuleCreated = (newModule: StudyModuleNode) => {
-    const updatedCourses = courses.map((c, idx) => {
-      if (idx === 0 || c.id === currentCourse.id) {
-        return {
-          ...c,
-          modules: [newModule, ...c.modules],
-        };
-      }
-      return c;
-    });
+    handleModulesCreated([newModule], undefined, false);
+  };
+
+  const handleModulesCreated = (
+    newModules: StudyModuleNode[],
+    bookTitle?: string,
+    isMultiChapterBook?: boolean
+  ) => {
+    let updatedCourses: StudyDirectoryCourse[];
+
+    if (isMultiChapterBook && newModules.length > 1) {
+      // Create a dedicated course/textbook containing all chapters (e.g. 300 chapters)
+      const newBookCourse: StudyDirectoryCourse = {
+        id: `book-${Date.now()}`,
+        name: bookTitle || `${newModules.length}-Chapter Master Curriculum`,
+        discipline: 'Academic Textbook',
+        quote: 'COMPREHENSIVE CHAPTER BREAKDOWN',
+        subquote: `${newModules.length} chapters mapped directly from source book`,
+        modules: newModules,
+      };
+      updatedCourses = [newBookCourse, ...courses.filter((c) => c.modules.length > 0)];
+    } else {
+      updatedCourses = courses.map((c, idx) => {
+        if (idx === 0 || c.id === currentCourse.id) {
+          return {
+            ...c,
+            name: bookTitle && c.modules.length === 0 ? bookTitle : c.name,
+            modules: [...newModules, ...c.modules],
+          };
+        }
+        return c;
+      });
+    }
 
     setCourses(updatedCourses);
     setSelectedModuleId(null);
@@ -179,6 +217,21 @@ export default function App() {
     } catch {
       // Safe fallback
     }
+
+    setUnloadToast({
+      message:
+        isMultiChapterBook && newModules.length > 1
+          ? `Loaded ${newModules.length} Chapters!`
+          : `Added Module "${newModules[0]?.title.slice(0, 24)}..."`,
+      sub: `${bookTitle || 'Course material'} synthesized into workspace.`,
+    });
+    setTimeout(() => {
+      setUnloadToast((curr) =>
+        curr?.message?.includes('Loaded') || curr?.message?.includes('Added Module')
+          ? null
+          : curr
+      );
+    }, 4500);
   };
 
   // Unload module state & server document purge handler
@@ -348,7 +401,6 @@ export default function App() {
                 isRailMode={false}
                 completedArtifactIds={completedArtifactIds}
                 onOpenUploadModal={() => setIsUploadModalOpen(true)}
-                onLoadSampleCourse={handleLoadSampleCourse}
                 onOpenFaq={() => setIsFaqOpen(true)}
                 hasAnyModules={currentCourse.modules.length > 0}
                 onClearSearch={() => setSearchQuery('')}
@@ -496,6 +548,7 @@ export default function App() {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onModuleCreated={handleModuleCreated}
+        onModulesCreated={handleModulesCreated}
       />
 
       {/* FAQ & How It Works Modal */}

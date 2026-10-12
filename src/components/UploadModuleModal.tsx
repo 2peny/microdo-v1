@@ -1,72 +1,67 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Upload, Sparkles, BookOpen, Loader2, CheckCircle2, FileText } from 'lucide-react';
+import {
+  X,
+  Upload,
+  Sparkles,
+  BookOpen,
+  Loader2,
+  CheckCircle2,
+  FileText,
+  Layers,
+  Search,
+  BookMarked,
+  Info,
+} from 'lucide-react';
 import { StudyModuleNode } from '../types';
-import { extractAcademicStudyGuide } from '../utils/academicParser';
+import {
+  extractBookOrModuleCurriculum,
+  detectChaptersInText,
+} from '../utils/academicParser';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+// Configure PDF worker safely
+try {
+  if (typeof window !== 'undefined' && pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '4.0.379'}/pdf.worker.min.mjs`;
+  }
+} catch {
+  // Graceful fallback
+}
 
 interface UploadModuleModalProps {
   isOpen: boolean;
   onClose: () => void;
   onModuleCreated: (newModule: StudyModuleNode) => void;
+  onModulesCreated?: (
+    newModules: StudyModuleNode[],
+    bookTitle?: string,
+    isMultiChapter?: boolean
+  ) => void;
 }
-
-const SAMPLE_TEXTS = {
-  ml: {
-    title: 'Transformer Self-Attention & Multi-Head Scaling',
-    code: 'CS-229 · Lecture 12',
-    raw: `Attention mechanisms allow neural networks to focus on specific parts of an input sequence dynamically.
-In scaled dot-product attention, Queries (Q), Keys (K), and Values (V) are computed via linear projections of word embeddings.
-The attention formula is Softmax((Q * K^T) / sqrt(d_k)) * V.
-Dividing by sqrt(d_k) prevents dot products from growing excessively large for large dimensions, which would push softmax into regions with vanishing gradients.
-Multi-Head Attention runs this mechanism h times in parallel with separate projection weights, allowing the model to jointly attend to information from different representation subspaces at different positions.`,
-  },
-  distributed: {
-    title: 'Distributed Consensus & Raft Protocol',
-    code: 'CS-6824 · Chapter 8',
-    raw: `Consensus involves multiple servers agreeing on values in the presence of network partitions and node crashes.
-Raft achieves consensus via leader election, log replication, and safety guarantees.
-Nodes transition between Leader, Follower, and Candidate states.
-Elections use randomized timers between 150ms and 300ms to avoid split votes.
-Once a leader is elected, it accepts client commands and appends log entries, replicating them across a majority quorum before committing.`,
-  },
-  graphs: {
-    title: 'Graph Shortest Paths & Dijkstra Algorithm',
-    code: 'CS-61B · Chapter 14',
-    raw: `Dijkstra's algorithm finds the shortest path from a single source to all other vertices in a weighted directed graph with non-negative edge weights.
-It maintains a min-priority queue of tentative distances.
-At each step, the vertex u with minimum distance is extracted, and all incident edges (u, v) are relaxed: if dist[u] + weight(u, v) < dist[v], then dist[v] is updated.
-Time complexity is O((V + E) log V) using a binary heap, or O(E + V log V) with a Fibonacci heap.
-If negative weights exist, Dijkstra fails because greedy assumptions no longer hold; Bellman-Ford must be used instead.`,
-  },
-};
 
 export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
   isOpen,
   onClose,
   onModuleCreated,
+  onModulesCreated,
 }) => {
   const [courseTitle, setCourseTitle] = useState('');
   const [courseCode, setCourseCode] = useState('');
   const [rawText, setRawText] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState('Analyzing course material...');
+  const [processingStatus, setProcessingStatus] = useState('Analyzing document architecture...');
   const [errorMsg, setErrorMsg] = useState('');
 
-  if (!isOpen) return null;
+  // Real-time chapter detection
+  const detectedChapters = useMemo(() => {
+    if (!rawText || rawText.trim().length < 40) return [];
+    return detectChaptersInText(rawText);
+  }, [rawText]);
 
-  const handleLoadSample = (key: 'ml' | 'distributed' | 'graphs') => {
-    const sample = SAMPLE_TEXTS[key];
-    setCourseTitle(sample.title);
-    setCourseCode(sample.code);
-    setRawText(sample.raw);
-    setUploadedFileName('');
-    setErrorMsg('');
-  };
+  if (!isOpen) return null;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,6 +69,8 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
     setUploadedFileName(file.name);
     setErrorMsg('');
+    setIsProcessing(true);
+    setProcessingStatus(`Reading "${file.name}"...`);
 
     try {
       let content = '';
@@ -81,18 +78,24 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
       if (lowerName.endsWith('.pdf')) {
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const textContent = await page.getTextContent();
-          content += textContent.items.map((s: any) => s.str).join(' ') + '\n';
+        try {
+          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          const totalPages = pdf.numPages;
+          for (let i = 1; i <= totalPages; i++) {
+            setProcessingStatus(`Extracting page ${i} of ${totalPages} from PDF...`);
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            content += textContent.items.map((s: any) => s.str).join(' ') + '\n';
+          }
+        } catch (pdfErr: any) {
+          console.warn('PDF parser worker issue, falling back to text stream:', pdfErr);
+          const textDecoder = new TextDecoder('utf-8', { fatal: false });
+          content = textDecoder.decode(arrayBuffer);
         }
       } else if (lowerName.endsWith('.docx')) {
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.extractRawText({ arrayBuffer });
         content = result.value;
-      } else if (lowerName.endsWith('.doc')) {
-        content = await file.text();
       } else {
         content = await file.text();
       }
@@ -101,7 +104,9 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
       // Auto-detect title from document heading if not already specified
       if (!courseTitle) {
-        const headingMatch = content.match(/^#{1,3}\s+(.+)$/m) || content.match(/^(?:Title|Module|Lecture|Chapter)\s*[:\-]\s*(.+)$/im);
+        const headingMatch =
+          content.match(/^#{1,3}\s+(.+)$/m) ||
+          content.match(/^(?:Book|Title|Module|Lecture|Chapter)\s*[:\-–—]\s*(.+)$/im);
         if (headingMatch && headingMatch[1].trim().length > 3) {
           setCourseTitle(headingMatch[1].trim());
         } else {
@@ -112,7 +117,9 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
       // Auto-detect course code if not specified
       if (!courseCode) {
         const codeMatch = content.match(/\b([A-Z]{2,5}[ -]?\d{2,4}[A-Z]?)\b/);
-        const chapterMatch = content.match(/\b(Lecture\s+\d+|Chapter\s+\d+|Week\s+\d+|Unit\s+\d+)\b/i);
+        const chapterMatch = content.match(
+          /\b(Lecture\s+\d+|Chapter\s+\d+|Week\s+\d+|Unit\s+\d+)\b/i
+        );
         if (codeMatch && chapterMatch) {
           setCourseCode(`${codeMatch[1]} · ${chapterMatch[1]}`);
         } else if (codeMatch) {
@@ -122,152 +129,45 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     } catch (err: any) {
       console.error('Error parsing file:', err);
       setErrorMsg('Failed to parse document: ' + err.message);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleProcessModule = async () => {
     if (!rawText.trim()) {
-      setErrorMsg('Please paste text or upload a course material document.');
+      setErrorMsg('Please paste text or upload a book/module document.');
       return;
     }
 
     setIsProcessing(true);
-    setProcessingStatus('Analyzing uploaded curriculum & extracting key topics...');
+    setProcessingStatus('Analyzing curriculum architecture & chapter structures...');
     setErrorMsg('');
 
     try {
-      // 1. Try server API with gemini-3.8-flash
-      let structuredData: any = null;
-      try {
-        const res = await fetch('/api/summarize-module', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rawText,
-            courseName: courseTitle || 'Course Module',
-          }),
-        });
+      // Run intelligent multi-chapter book and module extractor
+      const result = extractBookOrModuleCurriculum(rawText, courseTitle, courseCode);
 
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) {
-            structuredData = json.data;
-          }
-        }
-      } catch (err) {
-        console.warn('Server API failed or offline, falling back to local academic parser:', err);
+      if (result.isBook && result.modules.length > 1) {
+        setProcessingStatus(
+          `Synthesizing all ${result.totalChapters} chapters into study workspace...`
+        );
+      } else {
+        setProcessingStatus('Extracting concepts, worked examples, and exam review quiz...');
       }
 
-      // 2. Client-side smart academic parser fallback
-      if (!structuredData || !structuredData.topics || structuredData.topics.length === 0) {
-        setProcessingStatus('Extracting concepts, worked examples, and review questions...');
-        structuredData = extractAcademicStudyGuide(rawText, courseTitle, courseCode);
+      // Allow brief tick for state rendering
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      if (onModulesCreated && result.modules.length > 0) {
+        onModulesCreated(result.modules, result.bookTitle, result.isBook);
+      } else if (result.modules.length > 0) {
+        onModuleCreated(result.modules[0]);
       }
 
-      // 3. Assemble StudyModuleNode
-      const finalTitle = structuredData.title || courseTitle || 'Uploaded Course Module';
-      const finalPrefix = structuredData.prefix || `// Module: ${finalTitle.slice(0, 24)}`;
-      const finalCode = structuredData.courseCode || courseCode || 'Custom Notes';
-
-      const newModule: StudyModuleNode = {
-        id: `mod-${Date.now()}`,
-        prefix: finalPrefix,
-        title: finalTitle,
-        courseCode: finalCode,
-        estimatedHours: structuredData.estimatedHours || '3.0 hrs study',
-        summary: structuredData.summary || rawText.slice(0, 160).trim() + '...',
-        lines: [{ width: '90%' }, { width: '65%' }, { width: '80%' }, { width: '45%' }],
-        blueRoadmap: {
-          filename: structuredData.syllabusFilename || 'module-syllabus.md',
-          heading: structuredData.blueHeading || `Key Topics & Roadmap: ${finalTitle}`,
-          description: `Master these ${structuredData.topics.length} core topics extracted from your course materials.`,
-          topics: structuredData.topics.map((t: any, idx: number) => {
-            const topicSlug = t.topicName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || `topic-${idx + 1}`;
-            return {
-              id: `topic-${Date.now()}-${idx}`,
-              topicName: t.topicName,
-              objective: t.conceptObjective || `Master the principles and applications of ${t.topicName}.`,
-              lines: [
-                { width: '90%', highlight: true },
-                { width: '70%' },
-                { width: '80%' },
-              ],
-              artifacts: [
-                {
-                  id: `art-ov-${Date.now()}-${idx}`,
-                  type: 'overview' as const,
-                  path: `${topicSlug}-overview.md`,
-                  title: 'Key Concept & Rules',
-                  tagline: 'Distilled principles, definitions, and mental models',
-                  lines: [{ width: '92%' }, { width: '75%' }, { width: '82%' }],
-                  overviewMarkdown: t.overview,
-                  workedExamplesMarkdown: t.workedExample,
-                  quizData: {
-                    question: t.examQuestion,
-                    options: t.quizOptions,
-                    correctIndex: t.correctOptionIndex,
-                    explanation: t.quizExplanation,
-                  },
-                },
-                {
-                  id: `art-ex-${Date.now()}-${idx}`,
-                  type: 'examples' as const,
-                  path:
-                    t.workedExample?.includes('function ') ||
-                    t.workedExample?.includes('const ') ||
-                    t.workedExample?.trim().startsWith('//') ||
-                    t.workedExample?.includes('def ')
-                      ? `${topicSlug}-code-example.ts`
-                      : `${topicSlug}-practical-example.md`,
-                  title:
-                    t.workedExample?.includes('function ') ||
-                    t.workedExample?.includes('const ') ||
-                    t.workedExample?.trim().startsWith('//') ||
-                    t.workedExample?.includes('def ')
-                      ? 'Worked Code & Implementation'
-                      : 'Practical Example & Solution',
-                  tagline:
-                    t.workedExample?.includes('function ') ||
-                    t.workedExample?.includes('const ') ||
-                    t.workedExample?.trim().startsWith('//') ||
-                    t.workedExample?.includes('def ')
-                      ? 'Step-by-step code verification'
-                      : 'Concrete applied scenario & solution',
-                  lines: [{ width: '88%' }, { width: '65%' }, { width: '75%' }],
-                  overviewMarkdown: t.overview,
-                  workedExamplesMarkdown: t.workedExample,
-                  quizData: {
-                    question: t.examQuestion,
-                    options: t.quizOptions,
-                    correctIndex: t.correctOptionIndex,
-                    explanation: t.quizExplanation,
-                  },
-                },
-                {
-                  id: `art-qz-${Date.now()}-${idx}`,
-                  type: 'quiz' as const,
-                  path: `${topicSlug}-exam-quiz.json`,
-                  title: 'Exam Review & Self-Check',
-                  tagline: 'High-yield practice quiz challenge',
-                  lines: [{ width: '94%' }, { width: '80%' }, { width: '60%' }],
-                  overviewMarkdown: t.overview,
-                  workedExamplesMarkdown: t.workedExample,
-                  quizData: {
-                    question: t.examQuestion,
-                    options: t.quizOptions,
-                    correctIndex: t.correctOptionIndex,
-                    explanation: t.quizExplanation,
-                  },
-                },
-              ],
-            };
-          }),
-        },
-      };
-
-      onModuleCreated(newModule);
       onClose();
     } catch (err: any) {
+      console.error('Error processing curriculum:', err);
       setErrorMsg(err.message || 'Failed to process course materials.');
     } finally {
       setIsProcessing(false);
@@ -294,10 +194,10 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900 font-sans">
-                  Upload & Synthesize Course Module
+                  Upload & Synthesize Book or Course Module
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  MicroDo extracts real topics, concept overviews, worked code, and quizzes
+                  MicroDo extracts 1 to 300+ chapters with authentic study notes, worked examples, and quizzes
                 </p>
               </div>
             </div>
@@ -313,60 +213,62 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
           {/* Body */}
           <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-            {/* Quick Sample Presets */}
-            <div>
-              <span className="block text-[11px] font-mono text-slate-500 mb-1.5 font-semibold">
-                TRY WITH ACADEMIC PRESET:
-              </span>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleLoadSample('ml')}
-                  className="px-2.5 py-1 rounded-md text-xs font-mono bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition-colors cursor-pointer"
-                >
-                  Machine Learning (Attention)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleLoadSample('distributed')}
-                  className="px-2.5 py-1 rounded-md text-xs font-mono bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
-                >
-                  Distributed Systems (Raft)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleLoadSample('graphs')}
-                  className="px-2.5 py-1 rounded-md text-xs font-mono bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
-                >
-                  Algorithms (Dijkstra)
-                </button>
+            {/* Supported Materials & Architecture Guide */}
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-2.5 text-xs text-slate-600">
+              <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-slate-800">Supported Materials:</span>
+                <span className="ml-1 text-slate-600">
+                  Upload PDF, Word (.docx), Markdown (.md), or paste textbooks, course syllabi, and lecture modules. 
+                  Automatic chapter recognition supports full textbooks from 1 to 300+ chapters.
+                </span>
               </div>
             </div>
 
-            {/* Inputs: Course Title & Code */}
+            {/* Live Multi-Chapter Detection Status Banner */}
+            {detectedChapters.length >= 2 && (
+              <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200 flex items-start gap-3">
+                <div className="p-1 rounded bg-purple-100 text-purple-700 shrink-0 mt-0.5">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div className="flex-1 text-xs">
+                  <div className="font-bold text-purple-900 font-sans flex items-center gap-2">
+                    <span>Multi-Chapter Book Detected</span>
+                    <span className="px-2 py-0.5 rounded-full bg-purple-200 text-purple-800 font-mono text-[10px] font-semibold">
+                      {detectedChapters.length} Chapters Found
+                    </span>
+                  </div>
+                  <p className="text-purple-700 mt-0.5 leading-relaxed font-sans">
+                    MicroDo will generate all {detectedChapters.length} chapters as distinct study modules with their exact text breakdown, key topics roadmap, code/case examples, and quizzes.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Inputs: Course/Book Title & Code */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                  MODULE TITLE (OPTIONAL)
+                  BOOK OR MODULE TITLE (OPTIONAL)
                 </label>
                 <input
                   type="text"
                   value={courseTitle}
                   onChange={(e) => setCourseTitle(e.target.value)}
-                  placeholder="e.g. Distributed Consensus & Raft Protocol"
+                  placeholder="e.g. Modern Operating Systems (300 Chapters)"
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 text-xs font-sans shadow-xs"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                  COURSE / CHAPTER CODE (OPTIONAL)
+                  COURSE / DISCIPLINE CODE (OPTIONAL)
                 </label>
                 <input
                   type="text"
                   value={courseCode}
                   onChange={(e) => setCourseCode(e.target.value)}
-                  placeholder="e.g. CS-6824 · Chapter 8"
+                  placeholder="e.g. CS-400 · Core Curriculum"
                   className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 text-xs font-mono shadow-xs"
                 />
               </div>
@@ -375,7 +277,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
             {/* File Drop / Upload */}
             <div>
               <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                UPLOAD NOTES FILE (.pdf, .docx, .txt, .md)
+                UPLOAD BOOK OR NOTES FILE (.pdf, .docx, .txt, .md)
               </label>
               <div className="relative border-2 border-dashed border-slate-300 hover:border-purple-600 rounded-xl p-4 text-center bg-slate-50 transition-colors">
                 <input
@@ -392,11 +294,11 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
                       Loaded: {uploadedFileName}
                     </span>
                   ) : (
-                    'Drop course material file here or click to browse'
+                    'Drop textbook or module file here, or click to browse'
                   )}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                  Markdown, text notes, syllabus, PDF, or Word Docs (.docx)
+                  Full books, chapter dumps, PDF textbooks, DOCX, or Markdown
                 </p>
               </div>
             </div>
@@ -405,11 +307,12 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[11px] font-mono text-slate-600 font-semibold">
-                  OR PASTE LECTURE TEXT / SYLLABUS CONTENT
+                  OR PASTE BOOK CONTENT / CHAPTER BREAKDOWN
                 </label>
                 {wordCount > 0 && (
                   <span className="text-[10px] font-mono text-slate-400">
-                    {wordCount} words ({Math.round(rawText.length / 1024 * 10) / 10} KB)
+                    {wordCount.toLocaleString()} words ({Math.round((rawText.length / 1024) * 10) / 10} KB)
+                    {detectedChapters.length > 0 && ` · ${detectedChapters.length} chapters`}
                   </span>
                 )}
               </div>
@@ -417,7 +320,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
                 rows={6}
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
-                placeholder="Paste course syllabus, lecture transcript, or textbook section here..."
+                placeholder="Paste book chapters (e.g. Chapter 1: ... Chapter 300: ...) or lecture notes here..."
                 className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 font-mono text-xs leading-relaxed shadow-xs"
               />
             </div>
@@ -432,7 +335,9 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
           {/* Footer */}
           <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 bg-slate-50">
             <span className="text-[11px] font-mono text-slate-500">
-              Generates MicroDo 3-tier study cards
+              {detectedChapters.length >= 2
+                ? `Will generate ${detectedChapters.length} complete chapters`
+                : 'Generates MicroDo 3-tier study cards'}
             </span>
 
             <div className="flex items-center gap-2">
@@ -459,7 +364,11 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4 text-purple-300" />
-                    <span>Build Course Module</span>
+                    <span>
+                      {detectedChapters.length >= 2
+                        ? `Generate All ${detectedChapters.length} Chapters`
+                        : 'Build Study Module'}
+                    </span>
                   </>
                 )}
               </button>

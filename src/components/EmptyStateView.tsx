@@ -9,13 +9,12 @@ import learnerNoticeBoardImg from '../assets/images/learner_notice_board_1790840
 
 interface EmptyStateViewProps {
   onOpenUploadModal: () => void;
-  onLoadSampleCourse: () => void;
   onOpenFaq?: () => void;
 }
 
 export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
   onOpenUploadModal,
-  onLoadSampleCourse,
+  onOpenFaq,
 }) => {
   const [imgSrc, setImgSrc] = useState<string>(learnerNoticeBoardImg || '/learner_notice_board.jpg');
   const [imgError, setImgError] = useState(false);
@@ -34,14 +33,12 @@ export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
       transition={{ duration: 0.3, ease: 'easeOut' }}
       className="w-full max-w-4xl mx-auto flex flex-col items-center text-center py-2 px-4"
     >
-      {/* Top Badge */}
-
       {/* Main Title & Subtitle */}
       <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight font-sans max-w-2xl">
         Your study workspace is clean & ready
       </h2>
       <p className="text-sm text-slate-600 mt-2.5 max-w-xl leading-relaxed">
-        Start by uploading your first syllabus, textbook chapter, or lecture notes. MicroDo structures your course into an interactive 3-tier study flow.
+        Upload your syllabus, textbook chapter, or lecture notes. MicroDo structures your course materials into an interactive 3-tier study flow.
       </p>
 
       {/* Primary Action Buttons */}
@@ -49,20 +46,22 @@ export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
         <button
           type="button"
           onClick={onOpenUploadModal}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs font-sans transition-all cursor-pointer shadow-md hover:shadow-lg hover:-translate-y-0.5"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs font-sans transition-all cursor-pointer shadow-md hover:shadow-lg hover:-translate-y-0.5"
         >
           <Upload className="w-4 h-4" />
-          <span>Upload First Module</span>
+          <span>Upload Module or Book</span>
         </button>
 
-        <button
-          type="button"
-          onClick={onLoadSampleCourse}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 hover:text-indigo-700 font-medium text-xs font-sans transition-all cursor-pointer border border-indigo-200 shadow-xs hover:shadow-sm"
-        >
-          <Sparkles className="w-4 h-4 text-indigo-500" />
-          <span>Load Sample Course (Computer Systems)</span>
-        </button>
+        {onOpenFaq && (
+          <button
+            type="button"
+            onClick={onOpenFaq}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 hover:text-indigo-700 font-medium text-xs font-sans transition-all cursor-pointer border border-indigo-200 shadow-xs hover:shadow-sm"
+          >
+            <Sparkles className="w-4 h-4 text-indigo-500" />
+            <span>How MicroDo Works</span>
+          </button>
+        )}
       </div>
 
       {/* Learner Bulletin Board Illustration */}

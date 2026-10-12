@@ -48,7 +48,7 @@ const FAQ_ITEMS: FaqItem[] = [
     category: 'workflow',
     question: 'How do I start when my workspace is empty?',
     answer:
-      'When you start with an empty workspace, you have two simple paths: 1) Click "Upload Module" in the top header or on the empty state screen to paste your own syllabus or notes, or 2) Click "Load Sample Course" to instantly explore a pre-populated Computer Systems course and test the full 3-tier experience.',
+      'Click "Upload Module" in the top header or on the empty state screen. You can upload a PDF textbook, Word document (.docx), Markdown file, or paste your course syllabus and notes. MicroDo will automatically analyze the structure, identify every chapter (including textbooks with up to 300+ chapters), map out key topics, and generate structured study artifacts.',
   },
   {
     id: 'track-progress',

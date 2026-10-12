@@ -19,15 +19,15 @@ export const FooterBar: React.FC<FooterBarProps> = ({
 }) => {
   const userDisplay = typeof currentUser === 'string'
     ? currentUser
-    : currentUser?.email || 'student@nodegrid.space';
+    : currentUser?.email || 'Not Signed In';
 
   const userAvatar = typeof currentUser === 'object' && currentUser?.avatarEmoji
     ? currentUser.avatarEmoji
-    : '🦉';
+    : '👤';
 
   const userLabel = typeof currentUser === 'object' && currentUser?.fullName
     ? currentUser.fullName
-    : userDisplay;
+    : (currentUser ? userDisplay : 'Sign In / Register');
 
   return (
     <footer className="w-full border-t border-slate-200 bg-white py-2.5 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-xs font-sans text-slate-500 z-20">

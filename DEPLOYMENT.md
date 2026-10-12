@@ -45,7 +45,7 @@ Copy or extract the contents of the `dist/` folder directly into your web root (
 - `.htaccess` (pre-configured for Apache URL rewrites and gzip compression)
 
 ### Step 2: Done!
-Visit your domain. The interactive 3-tier progressive flow, demo playback, and module analysis will work right away in the browser.
+Visit your domain. The interactive 3-tier progressive flow, chapter detection, and curriculum synthesis will work right away in the browser.
 
 ---
 

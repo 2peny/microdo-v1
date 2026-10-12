@@ -52,8 +52,6 @@ export const ARCHETYPES: Record<ScholarArchetype, ArchetypeDetail> = {
   },
 };
 
-
-
 const STORAGE_KEY_AUTH = 'microdo_current_scholar';
 const STORAGE_KEY_USERS = 'microdo_all_registered_users';
 
@@ -84,13 +82,26 @@ export function getAllRegisteredUsers(): ScholarUser[] {
     const raw = localStorage.getItem(STORAGE_KEY_USERS);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length > 0) {
+    if (Array.isArray(parsed)) {
       return parsed;
     }
   } catch {
     // Fallback
   }
   return [];
+}
+
+export function authenticateUser(identifier: string, password: string): ScholarUser | null {
+  const all = getAllRegisteredUsers();
+  const clean = identifier.trim().toLowerCase();
+  const user = all.find(
+    (u) => u.email.toLowerCase() === clean || u.username.toLowerCase() === clean
+  );
+  if (user) {
+    saveStoredUser(user);
+    return user;
+  }
+  return null;
 }
 
 export function registerScholarUser(userData: Omit<ScholarUser, 'id' | 'joinedAt'>): ScholarUser {

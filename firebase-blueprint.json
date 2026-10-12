@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Authenticated scholar user profile and credentials record",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Firebase Auth user identifier (UID)"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the authenticated scholar"
+        },
+        "fullName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Real full name of the scholar"
+        },
+        "username": {
+          "type": "string",
+          "maxLength": 50,
+          "pattern": "^[a-zA-Z0-9_.-]+$",
+          "description": "Clean unique username handle"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["scholar", "admin"],
+          "description": "Role permission tier"
+        },
+        "archetype": {
+          "type": "string",
+          "description": "Scholar study archetype identifier"
+        },
+        "archetypeLabel": {
+          "type": "string",
+          "description": "Human-readable label for archetype"
+        },
+        "avatarEmoji": {
+          "type": "string",
+          "description": "Emoji avatar character"
+        },
+        "majorOrFocus": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Field of study or academic focus"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of profile registration"
+        }
+      },
+      "required": ["id", "email", "fullName", "username", "role", "archetype"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Individual scholar user account documents identified by Auth UID"
+    }
+  }
+}

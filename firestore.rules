@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Security Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'fullName', 'username', 'role', 'archetype']) &&
+             data.keys().hasOnly(['id', 'email', 'fullName', 'username', 'role', 'archetype', 'archetypeLabel', 'avatarEmoji', 'majorOrFocus', 'createdAt']) &&
+             data.id is string && data.id == request.auth.uid &&
+             data.email is string && data.email.size() <= 150 &&
+             data.fullName is string && data.fullName.size() <= 100 &&
+             data.username is string && data.username.size() <= 50 &&
+             data.role in ['scholar', 'admin'] &&
+             data.archetype is string && data.archetype.size() <= 50;
+    }
+
+    // Users Collection: Strictly secured by Auth UID
+    match /users/{userId} {
+      // PII Protection: only the owner can read their own profile
+      allow get: if isOwner(userId);
+      allow list: if false;
+
+      // Create: Owner can create their initial profile, defaulting role to scholar (no self-assigned admin)
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUser(incoming()) &&
+                       incoming().role == 'scholar';
+
+      // Update: Owner can update profile; ID and role are immutable
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUser(incoming()) &&
+                       incoming().id == existing().id &&
+                       incoming().role == existing().role;
+
+      allow delete: if false;
+    }
+  }
+}
