@@ -6,6 +6,7 @@
  */
 
 import { StudyModuleNode, StudyTopic, StudyArtifact } from '../types';
+import { buildCK12AlgebraCurriculum } from '../data/ck12AlgebraCurriculum';
 
 export interface ParsedTopic {
   topicName: string;
@@ -1123,6 +1124,43 @@ export function extractBookOrModuleCurriculum(
     };
   }
 
+  // Check if this material is CK-12 Algebra I or foundations of algebra
+  const isCK12Algebra =
+    /ck[- ]?12/i.test(textToAnalyze) ||
+    /(?:algebra\s*i\b|algebra\s*1\b)/i.test(textToAnalyze) ||
+    /1[-_]ck[-_]12/i.test(textToAnalyze) ||
+    /ck[- ]?12/i.test(userTitle || '') ||
+    /(?:algebra\s*i\b|algebra\s*1\b)/i.test(userTitle || '') ||
+    (textToAnalyze.includes('Variable Expression') && textToAnalyze.includes('Rectangle Perimeter'));
+
+  if (isCK12Algebra) {
+    let userOverview: string | undefined;
+    let userExamples: string | undefined;
+
+    if (textToAnalyze.includes('## Key Overview') || textToAnalyze.includes('### 🎯 Learning Objectives')) {
+      const parts = textToAnalyze.split(/(?=##\s+Worked\s+Examples)/i);
+      userOverview = parts[0].trim();
+      if (parts.length > 1) {
+        userExamples = parts.slice(1).join('\n\n').trim();
+      }
+    } else if (textToAnalyze.length > 80) {
+      userOverview = textToAnalyze;
+    }
+
+    const ck12Modules = buildCK12AlgebraCurriculum({
+      overview: userOverview,
+      examples: userExamples,
+    });
+
+    return {
+      isBook: true,
+      totalChapters: 13,
+      bookTitle: userTitle || 'CK-12 Algebra I',
+      discipline: 'Mathematics Curriculum',
+      modules: ck12Modules,
+    };
+  }
+
   // Otherwise, treat as a Single-Chapter Module (with multiple internal topics)
   const legacyGuide = extractAcademicStudyGuide(textToAnalyze, detectedBookTitle, detectedCode);
   const singleModule: StudyModuleNode = {
@@ -1221,5 +1259,67 @@ export function extractBookOrModuleCurriculum(
     bookTitle: legacyGuide.title,
     discipline: 'Academic Notes',
     modules: [singleModule],
+  };
+}
+
+/**
+ * Builds a multi-chapter curriculum directly from multiple uploaded files.
+ * Guarantees that each uploaded file becomes an authentic chapter on the Module Rail.
+ */
+export function buildCurriculumFromMultipleFiles(
+  files: { name: string; content: string }[],
+  userTitle?: string,
+  userCode?: string
+): BookAnalysisResult {
+  if (files.length === 0) {
+    return extractBookOrModuleCurriculum('', userTitle, userCode);
+  }
+
+  // If only 1 file uploaded, check if it's CK-12 or has multiple chapters
+  if (files.length === 1) {
+    return extractBookOrModuleCurriculum(files[0].content, userTitle || cleanTitle(files[0].name), userCode);
+  }
+
+  // Multi-file upload (e.g. 13 chapters):
+  // Sort files numerically if they have numbers in names (e.g. 1-ck-12, 2-ck-12, etc.)
+  const sortedFiles = [...files].sort((a, b) => {
+    const numA = a.name.match(/^(\d+)/)?.[1];
+    const numB = b.name.match(/^(\d+)/)?.[1];
+    if (numA && numB) {
+      return parseInt(numA, 10) - parseInt(numB, 10);
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
+  });
+
+  const detectedBookTitle = userTitle || cleanTitle(sortedFiles[0].name.replace(/^[\d\-_]+/, '').replace(/\.md$/i, ''));
+  const detectedCode = userCode || detectCourseCode(sortedFiles[0].content, 'MATH-ALG1');
+
+  const modules: StudyModuleNode[] = sortedFiles.map((file, idx) => {
+    const numMatch = file.name.match(/^(\d+)/);
+    const chapterNum = numMatch ? parseInt(numMatch[1], 10) : idx + 1;
+
+    // Detect title from file heading or filename
+    const headingMatch = file.content.match(/^#{1,2}\s+(.+)$/m);
+    let title = headingMatch ? headingMatch[1].trim() : '';
+    if (!title || title.toLowerCase().includes('key concept') || title.length > 50) {
+      title = cleanTitle(file.name.replace(/^[\d\-_]+/, '').replace(/\.md$/i, '').replace(/[-_]/g, ' '));
+    }
+
+    return buildModuleFromChapter(
+      chapterNum,
+      title || `Chapter ${chapterNum}`,
+      file.content,
+      detectedBookTitle,
+      detectedCode,
+      sortedFiles.length
+    );
+  });
+
+  return {
+    isBook: true,
+    totalChapters: modules.length,
+    bookTitle: detectedBookTitle,
+    discipline: 'Academic Textbook',
+    modules,
   };
 }

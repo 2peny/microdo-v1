@@ -210,8 +210,18 @@ export default function App() {
     }
 
     setCourses(updatedCourses);
-    setSelectedModuleId(null);
-    setActiveTopicId(null);
+    // Auto-select first chapter to immediately enter Rail Mode showing all chapters in the rail
+    if (newModules.length > 0) {
+      setSelectedModuleId(newModules[0].id);
+      if (newModules[0].blueRoadmap.topics.length > 0) {
+        setActiveTopicId(newModules[0].blueRoadmap.topics[0].id);
+      } else {
+        setActiveTopicId(null);
+      }
+    } else {
+      setSelectedModuleId(null);
+      setActiveTopicId(null);
+    }
     try {
       localStorage.setItem('microdo_courses', JSON.stringify(updatedCourses));
     } catch {
