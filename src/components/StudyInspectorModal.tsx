@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Copy, Check, BookOpen, Code2, HelpCircle, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 import { StudyArtifact } from '../types';
+import { MarkdownViewer } from './MarkdownViewer';
 
 interface StudyInspectorModalProps {
   artifact: StudyArtifact | null;
@@ -159,36 +160,15 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
           <div className="flex-1 overflow-y-auto p-6 bg-white text-slate-700 text-xs leading-relaxed">
             {activeTab === 'overview' && (
               <div className="space-y-4">
-                <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-start gap-2.5">
-                  <Sparkles className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                  <p className="text-xs text-emerald-900 font-sans">
-                    <strong>Study Directive:</strong> Master the core concepts, mechanisms, and key distinctions below sourced directly from your course materials.
+                <div className="p-3.5 rounded-xl bg-purple-50/80 border border-purple-200 flex items-start gap-2.5">
+                  <Sparkles className="w-4 h-4 text-purple-700 shrink-0 mt-0.5" />
+                  <p className="text-xs text-purple-900 font-sans">
+                    <strong>Pedagogical Master Notes:</strong> Distilled concepts, authentic mathematical formulas, and verified mental models extracted directly from your curriculum.
                   </p>
                 </div>
 
-                <div className="space-y-2 font-mono whitespace-pre-wrap leading-relaxed text-slate-800">
-                  {artifact.overviewMarkdown.split('\n').map((line, idx) => {
-                    const isHeading = line.startsWith('#');
-                    const isBullet = line.trim().startsWith('-') || line.trim().startsWith('*');
-                    const isQuote = line.trim().startsWith('>');
-
-                    return (
-                      <div
-                        key={idx}
-                        className={`${
-                          isHeading
-                            ? 'text-slate-900 font-bold text-sm pt-2 border-b border-slate-100 pb-1'
-                            : isBullet
-                            ? 'text-slate-800 pl-3 border-l-2 border-emerald-500'
-                            : isQuote
-                            ? 'text-amber-900 bg-amber-50 p-2 rounded border border-amber-200'
-                            : 'text-slate-700'
-                        }`}
-                      >
-                        {line || ' '}
-                      </div>
-                    );
-                  })}
+                <div className="p-2 sm:p-4 rounded-2xl bg-white border border-slate-100 shadow-2xs">
+                  <MarkdownViewer content={artifact.overviewMarkdown} />
                 </div>
               </div>
             )}
@@ -202,7 +182,7 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
                 artifact.workedExamplesMarkdown.includes('def ') ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono text-emerald-800 font-bold">
+                      <span className="text-xs font-mono text-purple-800 font-bold">
                         Code Implementation & Execution
                       </span>
                     </div>
@@ -215,33 +195,12 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
                 ) : (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono text-emerald-800 font-bold">
-                        Practical Scenario & Step-by-Step Solution
+                      <span className="text-xs font-mono text-purple-800 font-bold">
+                        Verified Step-by-Step Problem &amp; Solution
                       </span>
                     </div>
-                    <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs leading-relaxed space-y-2 whitespace-pre-wrap font-sans">
-                      {artifact.workedExamplesMarkdown.split('\n').map((line, idx) => {
-                        const isHeading = line.startsWith('#');
-                        const isBullet = line.trim().startsWith('-') || line.trim().startsWith('*');
-                        const isBold = line.trim().startsWith('**');
-
-                        return (
-                          <div
-                            key={idx}
-                            className={`${
-                              isHeading
-                                ? 'text-slate-900 font-bold text-sm pt-2 border-b border-slate-200/80 pb-1 font-mono'
-                                : isBullet
-                                ? 'pl-3 border-l-2 border-blue-500 font-mono'
-                                : isBold
-                                ? 'text-slate-900 font-semibold'
-                                : 'text-slate-700'
-                            }`}
-                          >
-                            {line || ' '}
-                          </div>
-                        );
-                      })}
+                    <div className="p-2 sm:p-4 rounded-2xl bg-white border border-slate-100 shadow-2xs">
+                      <MarkdownViewer content={artifact.workedExamplesMarkdown} />
                     </div>
                   </div>
                 )}

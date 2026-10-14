@@ -69,66 +69,121 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
   if (!isOpen) return null;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
 
-    setUploadedFileName(file.name);
     setErrorMsg('');
     setIsProcessing(true);
-    setProcessingStatus(`Reading "${file.name}"...`);
 
     try {
-      let content = '';
-      const lowerName = file.name.toLowerCase();
+      if (fileList.length === 1) {
+        const file = fileList[0];
+        setUploadedFileName(file.name);
+        setProcessingStatus(`Reading "${file.name}"...`);
 
-      if (lowerName.endsWith('.pdf')) {
-        const arrayBuffer = await file.arrayBuffer();
-        try {
-          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          const totalPages = pdf.numPages;
-          for (let i = 1; i <= totalPages; i++) {
-            setProcessingStatus(`Extracting page ${i} of ${totalPages} from PDF...`);
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            content += textContent.items.map((s: any) => s.str).join(' ') + '\n';
+        let content = '';
+        const lowerName = file.name.toLowerCase();
+
+        if (lowerName.endsWith('.pdf')) {
+          const arrayBuffer = await file.arrayBuffer();
+          try {
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const totalPages = pdf.numPages;
+            for (let i = 1; i <= totalPages; i++) {
+              setProcessingStatus(`Extracting page ${i} of ${totalPages} from PDF...`);
+              const page = await pdf.getPage(i);
+              const textContent = await page.getTextContent();
+              content += textContent.items.map((s: any) => s.str).join(' ') + '\n';
+            }
+          } catch (pdfErr: any) {
+            console.warn('PDF parser worker issue, falling back to text stream:', pdfErr);
+            const textDecoder = new TextDecoder('utf-8', { fatal: false });
+            content = textDecoder.decode(arrayBuffer);
           }
-        } catch (pdfErr: any) {
-          console.warn('PDF parser worker issue, falling back to text stream:', pdfErr);
-          const textDecoder = new TextDecoder('utf-8', { fatal: false });
-          content = textDecoder.decode(arrayBuffer);
-        }
-      } else if (lowerName.endsWith('.docx')) {
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.extractRawText({ arrayBuffer });
-        content = result.value;
-      } else {
-        content = await file.text();
-      }
-
-      setRawText(content);
-
-      // Auto-detect title from document heading if not already specified
-      if (!courseTitle) {
-        const headingMatch =
-          content.match(/^#{1,3}\s+(.+)$/m) ||
-          content.match(/^(?:Book|Title|Module|Lecture|Chapter)\s*[:\-–—]\s*(.+)$/im);
-        if (headingMatch && headingMatch[1].trim().length > 3) {
-          setCourseTitle(cleanTitle(headingMatch[1].trim()));
+        } else if (lowerName.endsWith('.docx')) {
+          const arrayBuffer = await file.arrayBuffer();
+          const result = await mammoth.extractRawText({ arrayBuffer });
+          content = result.value;
         } else {
-          setCourseTitle(cleanTitle(file.name));
+          content = await file.text();
         }
-      }
 
-      // Auto-detect course code if not specified
-      if (!courseCode) {
-        const codeMatch = content.match(/\b([A-Z]{2,5}[ -]?\d{2,4}[A-Z]?)\b/);
-        const chapterMatch = content.match(
-          /\b(Lecture\s+\d+|Chapter\s+\d+|Week\s+\d+|Unit\s+\d+)\b/i
-        );
-        if (codeMatch && chapterMatch) {
-          setCourseCode(`${codeMatch[1]} · ${chapterMatch[1]}`);
-        } else if (codeMatch) {
-          setCourseCode(codeMatch[1]);
+        setRawText(content);
+
+        // Auto-detect title from document heading if not already specified
+        if (!courseTitle) {
+          const headingMatch =
+            content.match(/^#{1,3}\s+(.+)$/m) ||
+            content.match(/^(?:Book|Title|Module|Lecture|Chapter)\s*[:\-–—]\s*(.+)$/im);
+          if (headingMatch && headingMatch[1].trim().length > 3) {
+            setCourseTitle(cleanTitle(headingMatch[1].trim()));
+          } else {
+            setCourseTitle(cleanTitle(file.name));
+          }
+        }
+
+        // Auto-detect course code if not specified
+        if (!courseCode) {
+          const codeMatch = content.match(/\b([A-Z]{2,5}[ -]?\d{2,4}[A-Z]?)\b/);
+          const chapterMatch = content.match(
+            /\b(Lecture\s+\d+|Chapter\s+\d+|Week\s+\d+|Unit\s+\d+)\b/i
+          );
+          if (codeMatch && chapterMatch) {
+            setCourseCode(`${codeMatch[1]} · ${chapterMatch[1]}`);
+          } else if (codeMatch) {
+            setCourseCode(codeMatch[1]);
+          }
+        }
+      } else {
+        // Multi-file upload: e.g. 1-ck-12-algebra-i-overview.md, 2-ck-12-..., 3-ck-12-...
+        setUploadedFileName(`${fileList.length} files selected`);
+        setProcessingStatus(`Extracting ${fileList.length} curriculum chapter files...`);
+
+        const fileContents: string[] = [];
+        for (let i = 0; i < fileList.length; i++) {
+          const file = fileList[i];
+          setProcessingStatus(`Reading chapter file ${i + 1} of ${fileList.length}: ${file.name}...`);
+          let fileText = '';
+          const lowerName = file.name.toLowerCase();
+
+          if (lowerName.endsWith('.pdf')) {
+            const arrayBuffer = await file.arrayBuffer();
+            try {
+              const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+              for (let p = 1; p <= pdf.numPages; p++) {
+                const page = await pdf.getPage(p);
+                const textContent = await page.getTextContent();
+                fileText += textContent.items.map((s: any) => s.str).join(' ') + '\n';
+              }
+            } catch {
+              const textDecoder = new TextDecoder('utf-8', { fatal: false });
+              fileText = textDecoder.decode(arrayBuffer);
+            }
+          } else if (lowerName.endsWith('.docx')) {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            fileText = result.value;
+          } else {
+            fileText = await file.text();
+          }
+
+          // If the file does not have its own major title header, add filename as header
+          const trimmed = fileText.trim();
+          if (!trimmed.startsWith('#')) {
+            fileContents.push(`# Key Concept & Rules (${file.name})\n\n${trimmed}`);
+          } else {
+            fileContents.push(trimmed);
+          }
+        }
+
+        const combined = fileContents.join('\n\n---\n\n');
+        setRawText(combined);
+
+        if (!courseTitle) {
+          // Detect common course prefix from filename e.g. "ck-12-algebra-i"
+          const firstFileName = fileList[0].name;
+          const cleanName = firstFileName.replace(/^[\d\-_]+/, '').replace(/\.md$/i, '').replace(/[-_]/g, ' ');
+          setCourseTitle(cleanTitle(cleanName));
         }
       }
     } catch (err: any) {
@@ -146,39 +201,49 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     }
 
     setIsProcessing(true);
-    setProcessingStatus('Distilling textbook content & stripping publisher boilerplate...');
+    setProcessingStatus('Distilling textbook content & mapping chapters...');
     setErrorMsg('');
 
     try {
       const sanitizedText = sanitizeAcademicText(rawText);
       const textToProcess = sanitizedText.length > 80 ? sanitizedText : rawText;
 
-      let aiResult: any = null;
-      try {
-        setProcessingStatus('Synthesizing pedagogical notes, verified examples & quizzes...');
-        const apiRes = await fetch('/api/summarize-module', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rawText: textToProcess.slice(0, 40000),
-            courseName: courseTitle || 'Academic Module',
-          }),
-        });
-        if (apiRes.ok) {
-          const json = await apiRes.json();
-          if (json.success && json.data) {
-            aiResult = json.data;
-          }
-        }
-      } catch {
-        // Fallback to local intelligent extractor
-      }
-
+      // 1. Detect if this is a Multi-Chapter Book or Collection (e.g. 2 to 300 chapters)
+      const detected = detectChaptersInText(textToProcess);
       let result: BookAnalysisResult;
-      if (aiResult && aiResult.topics && aiResult.topics.length > 0) {
-        result = buildResultFromAiSynthesis(aiResult, courseTitle, courseCode);
-      } else {
+
+      if (detected.length >= 2) {
+        // MULTI-CHAPTER BOOK: Preserve ALL chapters for the Module Rail!
+        setProcessingStatus(`Synthesizing all ${detected.length} chapters into Module Rail...`);
         result = extractBookOrModuleCurriculum(textToProcess, courseTitle, courseCode);
+      } else {
+        // SINGLE MODULE: Try server synthesis or intelligent fallback
+        let aiResult: any = null;
+        try {
+          setProcessingStatus('Synthesizing pedagogical notes, verified examples & quizzes...');
+          const apiRes = await fetch('/api/summarize-module', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              rawText: textToProcess.slice(0, 40000),
+              courseName: courseTitle || 'Academic Module',
+            }),
+          });
+          if (apiRes.ok) {
+            const json = await apiRes.json();
+            if (json.success && json.data) {
+              aiResult = json.data;
+            }
+          }
+        } catch {
+          // Fallback to local intelligent extractor
+        }
+
+        if (aiResult && aiResult.topics && aiResult.topics.length > 0) {
+          result = buildResultFromAiSynthesis(aiResult, courseTitle, courseCode);
+        } else {
+          result = extractBookOrModuleCurriculum(textToProcess, courseTitle, courseCode);
+        }
       }
 
       if (result.isBook && result.modules.length > 1) {
@@ -259,20 +324,44 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
             {/* Live Multi-Chapter Detection Status Banner */}
             {detectedChapters.length >= 2 && (
-              <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200 flex items-start gap-3">
-                <div className="p-1 rounded bg-purple-100 text-purple-700 shrink-0 mt-0.5">
-                  <Layers className="w-4 h-4" />
-                </div>
-                <div className="flex-1 text-xs">
-                  <div className="font-bold text-purple-900 font-sans flex items-center gap-2">
-                    <span>Multi-Chapter Book Detected</span>
-                    <span className="px-2 py-0.5 rounded-full bg-purple-200 text-purple-800 font-mono text-[10px] font-semibold">
-                      {detectedChapters.length} Chapters Found
-                    </span>
+              <div className="p-3.5 rounded-xl bg-purple-50 border border-purple-200 space-y-2">
+                <div className="flex items-start gap-3">
+                  <div className="p-1 rounded bg-purple-100 text-purple-700 shrink-0 mt-0.5">
+                    <Layers className="w-4 h-4" />
                   </div>
-                  <p className="text-purple-700 mt-0.5 leading-relaxed font-sans">
-                    MicroDo will generate all {detectedChapters.length} chapters as distinct study modules with their exact text breakdown, key topics roadmap, code/case examples, and quizzes.
-                  </p>
+                  <div className="flex-1 text-xs">
+                    <div className="font-bold text-purple-900 font-sans flex items-center justify-between gap-2">
+                      <span>Multi-Chapter Curriculum Detected</span>
+                      <span className="px-2 py-0.5 rounded-full bg-purple-200 text-purple-800 font-mono text-[10px] font-semibold">
+                        {detectedChapters.length} Chapters Ready
+                      </span>
+                    </div>
+                    <p className="text-purple-700 mt-0.5 leading-relaxed font-sans">
+                      MicroDo will generate all {detectedChapters.length} chapters as individual modules on the left Chapter Rail with verified study notes, worked examples, and quizzes.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Preview list of detected chapters */}
+                <div className="mt-2 pt-2 border-t border-purple-200/80">
+                  <div className="text-[10px] font-mono text-purple-800 font-semibold mb-1.5 uppercase tracking-wider">
+                    Detected Rail Chapters:
+                  </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1 pr-1 font-mono text-[11px]">
+                    {detectedChapters.map((ch, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2 px-2 py-1 rounded bg-white/80 border border-purple-100 text-purple-900"
+                      >
+                        <span className="w-5 h-5 rounded bg-purple-100 text-purple-700 font-bold flex items-center justify-center text-[10px] shrink-0">
+                          {ch.chapterNumber}
+                        </span>
+                        <span className="truncate font-sans font-medium text-slate-800">
+                          {ch.chapterTitle}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -314,6 +403,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
               <div className="relative border-2 border-dashed border-slate-300 hover:border-purple-600 rounded-xl p-4 text-center bg-slate-50 transition-colors">
                 <input
                   type="file"
+                  multiple
                   accept=".txt,.md,.json,.pdf,.doc,.docx"
                   onChange={handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"

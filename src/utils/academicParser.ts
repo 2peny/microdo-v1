@@ -109,8 +109,6 @@ export function sanitizeAcademicText(rawText: string): string {
     if (/^www\.[a-z0-9-]+\.[a-z]{2,}(?:\s+\d+)?$/i.test(line)) continue;
     if (/^\d+\s+www\.[a-z0-9-]+\.[a-z]{2,}$/i.test(line)) continue;
 
-    // Short running chapter header on its own line e.g. "Chapter 1.  Equations"
-    if (/^Chapter\s+\d+\.\s+[A-Za-z\s]{3,40}$/i.test(line) && line.length < 50) continue;
 
     // Publisher / copyright boilerplate
     if (
@@ -235,15 +233,37 @@ export function detectChaptersInText(text: string): DetectedChapterRaw[] {
   const cleaned = clean(text);
   const lines = cleaned.split('\n');
 
-  const candidates: { lineIndex: number; chapterNumber: number; title: string; heading: string }[] = [];
+  interface Candidate {
+    lineIndex: number;
+    chapterNumber: number;
+    title: string;
+    heading: string;
+  }
 
+  const candidates: Candidate[] = [];
+
+  // Pattern 1: Explicit Chapter / Ch / Capítulo / Chapitre
   const patternStandard = /^(?:#+\s*)?(?:Chapter|CHAPTER|Capítulo|Chapitre|Ch\.)\s*(\d{1,4})(?:[\s:.\-–—]+(.*))?$/i;
-  const patternModule = /^(?:#+\s*)?(?:Module|MODULE|Unit|UNIT|Lecture|LECTURE|Part|PART|Week|WEEK)\s*(\d{1,4})(?:[\s:.\-–—]+(.*))?$/i;
+
+  // Pattern 2: Module / Unit / Lesson / Section / Lecture / Week / Part
+  const patternModule = /^(?:#+\s*)?(?:Module|MODULE|Unit|UNIT|Lesson|LESSON|Lecture|LECTURE|Part|PART|Week|WEEK|Section|SECTION)\s*(\d{1,4})(?:[\s:.\-–—]+(.*))?$/i;
+
+  // Pattern 3: Numbered textbook chapters: e.g. "1. Equations and Functions" or "# 1. Equations and Functions"
+  const patternNumbered = /^(?:#+\s*)?(\d{1,3})\.\s+([A-Za-z][A-Za-z0-9\s,&'\-\(\):]{3,90})$/;
+
+  // Pattern 4: Markdown chapter files or headings:
+  // e.g. "# Key Concept & Rules (1-ck-12-algebra-i-overview.md)"
+  // e.g. "# 1-ck-12-algebra-i-overview.md" or "1-ck-12-algebra-i-overview.md"
+  const patternFileChapter = /^(?:#+\s*)?(?:Key Concept & Rules\s*)?(?:\()?(\d{1,3})[-_]([A-Za-z0-9_\-\.]+)(?:\))?(?:\.md)?$/i;
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].trim();
-    if (!rawLine || rawLine.length > 100) continue;
+    if (!rawLine || rawLine.length > 120) continue;
 
+    // Skip dot-trails (TOC remnants)
+    if (/(?:\.\s*){3,}/.test(rawLine) || /\.{2,}\s*\d+/.test(rawLine)) continue;
+
+    // Try Pattern 1: Chapter X
     const matchStandard = rawLine.match(patternStandard);
     if (matchStandard) {
       const num = parseInt(matchStandard[1], 10);
@@ -260,6 +280,7 @@ export function detectChaptersInText(text: string): DetectedChapterRaw[] {
       continue;
     }
 
+    // Try Pattern 2: Module / Unit / Lesson / Section X
     const matchModule = rawLine.match(patternModule);
     if (matchModule) {
       const num = parseInt(matchModule[1], 10);
@@ -273,14 +294,73 @@ export function detectChaptersInText(text: string): DetectedChapterRaw[] {
         heading: rawLine,
         title: title || `Module ${num}`,
       });
+      continue;
+    }
+
+    // Try Pattern 4: Markdown file header (e.g. 1-ck-12-algebra-i-overview.md or # Key Concept & Rules (1-ck-12-algebra-i-overview.md))
+    const matchFile = rawLine.match(patternFileChapter);
+    if (matchFile) {
+      const num = parseInt(matchFile[1], 10);
+      const rawSlug = matchFile[2].replace(/\.md$/i, '').replace(/[-_]/g, ' ').trim();
+      const title = cleanTitle(rawSlug);
+      candidates.push({
+        lineIndex: i,
+        chapterNumber: num,
+        heading: rawLine,
+        title: title || `Chapter ${num}`,
+      });
+      continue;
+    }
+
+    // Try Pattern 3: Numbered textbook chapters (e.g. 1. Equations and Functions)
+    const matchNum = rawLine.match(patternNumbered);
+    if (matchNum) {
+      const num = parseInt(matchNum[1], 10);
+      const title = matchNum[2].trim();
+      // Only treat as chapter if it's not a small list item and within chapter number bounds (1-100)
+      if (num >= 1 && num <= 100 && title.length >= 4) {
+        candidates.push({
+          lineIndex: i,
+          chapterNumber: num,
+          heading: rawLine,
+          title: title,
+        });
+        continue;
+      }
     }
   }
 
+  // Fallback Pattern 5: If fewer than 2 candidates, check for multiple top-level markdown headings: # Title
   if (candidates.length < 2) {
+    const h1Candidates: Candidate[] = [];
+    let h1Index = 1;
+    for (let i = 0; i < lines.length; i++) {
+      const rawLine = lines[i].trim();
+      if (/^#\s+[A-Za-z0-9]/.test(rawLine)) {
+        const titleText = rawLine.replace(/^#\s+/, '').trim();
+        // Ignore generic words like "Table of Contents" or "Index"
+        if (!/^(?:Table of Contents|Index|Bibliography|Glossary|Overview)$/i.test(titleText)) {
+          h1Candidates.push({
+            lineIndex: i,
+            chapterNumber: h1Index++,
+            heading: rawLine,
+            title: titleText,
+          });
+        }
+      }
+    }
+    if (h1Candidates.length >= 2) {
+      candidates.push(...h1Candidates);
+    }
+  }
+
+  if (candidates.length < 1) {
     return [];
   }
 
-  const chapterMap = new Map<number, { lineIndex: number; chapterNumber: number; title: string; heading: string }[]>();
+  // Deduplicate candidates by chapterNumber:
+  // If a chapter appeared in a TOC and then in the actual body, choose the one with actual body content!
+  const chapterMap = new Map<number, Candidate[]>();
   for (const c of candidates) {
     if (!chapterMap.has(c.chapterNumber)) {
       chapterMap.set(c.chapterNumber, []);
@@ -288,13 +368,29 @@ export function detectChaptersInText(text: string): DetectedChapterRaw[] {
     chapterMap.get(c.chapterNumber)!.push(c);
   }
 
-  const selectedCandidates: { lineIndex: number; chapterNumber: number; title: string; heading: string }[] = [];
+  const selectedCandidates: Candidate[] = [];
   const sortedNumbers = Array.from(chapterMap.keys()).sort((a, b) => a - b);
 
   for (const num of sortedNumbers) {
     const list = chapterMap.get(num)!;
-    const best = list.find((c) => c.lineIndex > 30) || list[list.length - 1];
-    selectedCandidates.push(best);
+    if (list.length === 1) {
+      selectedCandidates.push(list[0]);
+    } else {
+      // Pick the instance that has the most non-empty lines following it before the next chapter
+      let best = list[0];
+      let maxContent = -1;
+      for (const item of list) {
+        let contentCount = 0;
+        for (let j = item.lineIndex + 1; j < Math.min(lines.length, item.lineIndex + 30); j++) {
+          if (lines[j].trim().length > 10) contentCount++;
+        }
+        if (contentCount > maxContent) {
+          maxContent = contentCount;
+          best = item;
+        }
+      }
+      selectedCandidates.push(best);
+    }
   }
 
   selectedCandidates.sort((a, b) => a.lineIndex - b.lineIndex);
@@ -414,6 +510,12 @@ function formatWorkedExamplesMarkdown(
   content: string,
   domain: string
 ): string {
+  // If content already contains a dedicated worked examples section, extract it directly!
+  if (/##\s+Worked\s+Examples/i.test(content)) {
+    const parts = content.split(/##\s+Worked\s+Examples/i);
+    return `## Worked Examples\n\n${parts[1].trim()}`;
+  }
+
   if (examples.length > 0) {
     const rendered = examples
       .map((ex, idx) => {
@@ -465,6 +567,20 @@ function synthesizeOverviewNotes(
   objectives: string[],
   domain: string
 ): string {
+  // If content already contains rich structured markdown, preserve authentic text!
+  if (
+    content.includes('### 🎯 Learning Objectives') ||
+    content.includes('### 📖 Core Definitions') ||
+    content.includes('## Key Overview') ||
+    (content.includes('|') && content.includes('---'))
+  ) {
+    if (/##\s+Worked\s+Examples/i.test(content)) {
+      const parts = content.split(/##\s+Worked\s+Examples/i);
+      return parts[0].trim();
+    }
+    return content.trim();
+  }
+
   const lines = content.split('\n').map((l) => l.trim()).filter(Boolean);
   const paragraphs = content.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.length > 30);
 
@@ -650,12 +766,12 @@ function splitChapterIntoTopics(chapterTitle: string, rawBody: string): { title:
     return [{ title: chapterTitle, content: sanitized }];
   }
 
-  const chunks = [];
+  const chunks: { title: string; content: string }[] = [];
   const chunkSize = Math.max(2, Math.ceil(paragraphs.length / 3));
   for (let i = 0; i < paragraphs.length && chunks.length < 3; i += chunkSize) {
     const chunkParas = paragraphs.slice(i, i + chunkSize);
-    const title = `Key Principles Part ${chunks.length + 1}`;
-    chunks.push({ title, content: chunkParas.join('\n\n') });
+    const chunkTitle: string = `Key Principles Part ${chunks.length + 1}`;
+    chunks.push({ title: chunkTitle, content: chunkParas.join('\n\n') });
   }
 
   return chunks;

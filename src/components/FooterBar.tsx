@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HelpCircle, Trash2, Layers, UserCheck } from 'lucide-react';
 import { ScholarUser } from '../types';
+import { LegalModal, LegalTab } from './LegalModal';
 
 interface FooterBarProps {
   currentUser?: ScholarUser | string | null;
@@ -17,6 +18,13 @@ export const FooterBar: React.FC<FooterBarProps> = ({
   hasModules = true,
   onOpenAuth,
 }) => {
+  const [legalModalOpen, setLegalModalOpen] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<LegalTab>('privacy');
+
+  const handleOpenLegal = (tab: LegalTab) => {
+    setLegalModalTab(tab);
+    setLegalModalOpen(true);
+  };
   const userDisplay = typeof currentUser === 'string'
     ? currentUser
     : currentUser?.email || 'Not Signed In';
@@ -49,6 +57,38 @@ export const FooterBar: React.FC<FooterBarProps> = ({
           <HelpCircle className="w-3.5 h-3.5" />
           <span>FAQ &amp; Guide</span>
         </button>
+
+        <span className="text-slate-300">·</span>
+
+        {/* Legal links: Privacy Policy, Terms & Conditions, EULA */}
+        <div className="flex items-center gap-2 text-[11px] font-sans">
+          <button
+            type="button"
+            onClick={() => handleOpenLegal('privacy')}
+            className="text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+            title="Read Privacy Policy"
+          >
+            Privacy Policy
+          </button>
+          <span className="text-slate-300">·</span>
+          <button
+            type="button"
+            onClick={() => handleOpenLegal('terms')}
+            className="text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+            title="Read Terms & Conditions"
+          >
+            Terms &amp; Conditions
+          </button>
+          <span className="text-slate-300">·</span>
+          <button
+            type="button"
+            onClick={() => handleOpenLegal('eula')}
+            className="text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+            title="Read End User License Agreement"
+          >
+            EULA
+          </button>
+        </div>
 
         {/* State Toggle Helper: Reset to Empty State when modules exist */}
         {hasModules && onClearToEmptyState && (
@@ -92,6 +132,12 @@ export const FooterBar: React.FC<FooterBarProps> = ({
           </span>
         )}
       </div>
+
+      <LegalModal
+        isOpen={legalModalOpen}
+        initialTab={legalModalTab}
+        onClose={() => setLegalModalOpen(false)}
+      />
     </footer>
   );
 };
