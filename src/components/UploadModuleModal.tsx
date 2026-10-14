@@ -17,6 +17,10 @@ import { StudyModuleNode } from '../types';
 import {
   extractBookOrModuleCurriculum,
   detectChaptersInText,
+  sanitizeAcademicText,
+  cleanTitle,
+  buildResultFromAiSynthesis,
+  BookAnalysisResult,
 } from '../utils/academicParser';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
@@ -55,10 +59,11 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
   const [processingStatus, setProcessingStatus] = useState('Analyzing document architecture...');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Real-time chapter detection
+  // Real-time chapter detection on sanitized text
   const detectedChapters = useMemo(() => {
     if (!rawText || rawText.trim().length < 40) return [];
-    return detectChaptersInText(rawText);
+    const sanitized = sanitizeAcademicText(rawText);
+    return detectChaptersInText(sanitized);
   }, [rawText]);
 
   if (!isOpen) return null;
@@ -108,9 +113,9 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
           content.match(/^#{1,3}\s+(.+)$/m) ||
           content.match(/^(?:Book|Title|Module|Lecture|Chapter)\s*[:\-–—]\s*(.+)$/im);
         if (headingMatch && headingMatch[1].trim().length > 3) {
-          setCourseTitle(headingMatch[1].trim());
+          setCourseTitle(cleanTitle(headingMatch[1].trim()));
         } else {
-          setCourseTitle(file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '));
+          setCourseTitle(cleanTitle(file.name));
         }
       }
 
@@ -141,23 +146,50 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     }
 
     setIsProcessing(true);
-    setProcessingStatus('Analyzing curriculum architecture & chapter structures...');
+    setProcessingStatus('Distilling textbook content & stripping publisher boilerplate...');
     setErrorMsg('');
 
     try {
-      // Run intelligent multi-chapter book and module extractor
-      const result = extractBookOrModuleCurriculum(rawText, courseTitle, courseCode);
+      const sanitizedText = sanitizeAcademicText(rawText);
+      const textToProcess = sanitizedText.length > 80 ? sanitizedText : rawText;
+
+      let aiResult: any = null;
+      try {
+        setProcessingStatus('Synthesizing pedagogical notes, verified examples & quizzes...');
+        const apiRes = await fetch('/api/summarize-module', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rawText: textToProcess.slice(0, 40000),
+            courseName: courseTitle || 'Academic Module',
+          }),
+        });
+        if (apiRes.ok) {
+          const json = await apiRes.json();
+          if (json.success && json.data) {
+            aiResult = json.data;
+          }
+        }
+      } catch {
+        // Fallback to local intelligent extractor
+      }
+
+      let result: BookAnalysisResult;
+      if (aiResult && aiResult.topics && aiResult.topics.length > 0) {
+        result = buildResultFromAiSynthesis(aiResult, courseTitle, courseCode);
+      } else {
+        result = extractBookOrModuleCurriculum(textToProcess, courseTitle, courseCode);
+      }
 
       if (result.isBook && result.modules.length > 1) {
         setProcessingStatus(
-          `Synthesizing all ${result.totalChapters} chapters into study workspace...`
+          `Synthesized all ${result.totalChapters} chapters into study workspace!`
         );
       } else {
-        setProcessingStatus('Extracting concepts, worked examples, and exam review quiz...');
+        setProcessingStatus('Extracted concepts, step-by-step examples, and review quiz!');
       }
 
-      // Allow brief tick for state rendering
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
       if (onModulesCreated && result.modules.length > 0) {
         onModulesCreated(result.modules, result.bookTitle, result.isBook);
