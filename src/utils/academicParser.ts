@@ -44,16 +44,57 @@ export function clean(str: string): string {
 /**
  * Strips out front matter, copyright pages, table of contents dot trails,
  * licensing notices, and publisher disclaimers to isolate authentic educational text.
+ *
+ * Strategy:
+ *  Phase 1 – Find where the real lesson begins by locating the first genuine
+ *             instructional heading (numbered section, Learning Objectives, Chapter…).
+ *             Everything before that point is front-matter and gets discarded.
+ *  Phase 2 – Filter residual noise (dot-trails, running page headers, boilerplate)
+ *             inside the lesson body.
  */
 export function sanitizeAcademicText(rawText: string): string {
   const cleaned = clean(rawText);
   const lines = cleaned.split('\n');
-  const sanitizedLines: string[] = [];
 
-  let inTableOfContents = false;
+  // ── Phase 1: Detect lesson start ────────────────────────────────────────────
+  let lessonStartIndex = -1;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const l = lines[i].trim();
+    if (!l) continue;
+
+    // Dot-trail lines are never real headings
+    if (/(?:\.\s*){3,}/.test(l) || /\.{2,}\s*\d+/.test(l)) continue;
+
+    // Numbered section: "1.1 Variable Expressions"
+    if (/^\d+\.\d+\s+[A-Za-z]/.test(l) && !/\bwww\./i.test(l)) {
+      lessonStartIndex = i;
+      break;
+    }
+    // "Learning Objectives" or "Introduction - …"
+    if (/^(?:Learning\s+Objectives?|Introduction\s*[-–—])/i.test(l)) {
+      lessonStartIndex = i;
+      break;
+    }
+    // "Chapter 1: Equations and Functions" (body line, not TOC)
+    if (
+      /^(?:Chapter|Module|Unit|Lecture|Week|Part)\s+\d+[:\s]+[A-Za-z]/i.test(l) &&
+      !/\bwww\./i.test(l)
+    ) {
+      lessonStartIndex = i;
+      break;
+    }
+  }
+
+  // Slice to lesson start; fall back to full document if none found
+  const linesToProcess = lessonStartIndex > 0 ? lines.slice(lessonStartIndex) : lines;
+
+  // ── Phase 2: Filter residual noise inside the lesson body ───────────────────
+  const sanitizedLines: string[] = [];
+
+  for (const raw of linesToProcess) {
+    const line = raw.trim();
+
     if (!line) {
       sanitizedLines.push('');
       continue;
@@ -61,44 +102,17 @@ export function sanitizeAcademicText(rawText: string): string {
 
     const lower = line.toLowerCase();
 
-    // 1. Detect Table of Contents headers
-    if (
-      lower.startsWith('contents') ||
-      lower.startsWith('table of contents') ||
-      lower === 'brief contents'
-    ) {
-      inTableOfContents = true;
-      continue;
-    }
+    // Dot-trail remnants ("1.2 Order of Operations . . . . 8")
+    if (/(?:\.\s*){3,}/.test(line) || /\.{2,}\s*\d+/.test(line)) continue;
 
-    // Table of contents lines typically have dots (e.g. "1.1 Variable Expressions ......... 2")
-    if (inTableOfContents) {
-      if (
-        /\.{2,}\s*\d+/.test(line) ||
-        /^\d+\.\d+.*\.{2,}/.test(line) ||
-        /\b(?:chapter|contents|\d+\.\d+)\b.*\b\d+$/.test(lower)
-      ) {
-        continue;
-      }
-      // If we see real lesson headings or paragraphs, TOC is finished
-      if (
-        /^(?:chapter\s+\d+|\d+\.\d+\s+[A-Za-z]|learning objectives|introduction\s*[-–—])/i.test(line) &&
-        !/\.{2,}/.test(line)
-      ) {
-        inTableOfContents = false;
-      } else if (line.length > 70 && !/\.{2,}/.test(line)) {
-        inTableOfContents = false;
-      } else {
-        continue;
-      }
-    }
+    // Running page headers / footers: "www.ck12.org  3"  or  "3  www.ck12.org"
+    if (/^www\.[a-z0-9-]+\.[a-z]{2,}(?:\s+\d+)?$/i.test(line)) continue;
+    if (/^\d+\s+www\.[a-z0-9-]+\.[a-z]{2,}$/i.test(line)) continue;
 
-    // 2. Filter standalone TOC dot trail lines anywhere in the document
-    if (/\.{3,}\s*\d+/.test(line)) {
-      continue;
-    }
+    // Short running chapter header on its own line e.g. "Chapter 1.  Equations"
+    if (/^Chapter\s+\d+\.\s+[A-Za-z\s]{3,40}$/i.test(line) && line.length < 50) continue;
 
-    // 3. Filter publisher/copyright/license boilerplate lines
+    // Publisher / copyright boilerplate
     if (
       lower.includes('all rights reserved') ||
       lower.includes('creative commons') ||
@@ -112,6 +126,7 @@ export function sanitizeAcademicText(rawText: string): string {
       lower.includes('isbn:') ||
       lower.includes('permission is granted') ||
       lower.includes('derivative works') ||
+      lower.includes('terms-of-use') ||
       (lower.includes('ck-12 foundation') && lower.includes('non-profit')) ||
       (lower.includes('www.ck12.org') &&
         (lower.includes('http') ||
@@ -124,12 +139,7 @@ export function sanitizeAcademicText(rawText: string): string {
       continue;
     }
 
-    // Filter repetitive headers/footers like "www.ck12.org 2" or "2 www.ck12.org"
-    if (/^www\.ck12\.org\s*\d*$/i.test(line) || /^\d+\s*www\.ck12\.org$/i.test(line)) {
-      continue;
-    }
-
-    sanitizedLines.push(lines[i]);
+    sanitizedLines.push(raw);
   }
 
   return sanitizedLines.join('\n').trim();
