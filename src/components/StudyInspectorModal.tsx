@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Copy, Check, BookOpen, Code2, HelpCircle, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import {
+  X,
+  Copy,
+  Check,
+  BookOpen,
+  Code2,
+  HelpCircle,
+  CheckCircle2,
+  AlertCircle,
+  Sparkles,
+  Calculator,
+} from 'lucide-react';
 import { StudyArtifact } from '../types';
 import { MarkdownViewer } from './MarkdownViewer';
 
@@ -13,31 +24,32 @@ interface StudyInspectorModalProps {
 
 export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
   artifact,
-  isCompleted = false,
-  onToggleCompleted,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'examples' | 'quiz'>('overview');
   const [selectedQuizOption, setSelectedQuizOption] = useState<number | null>(null);
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Sync tab with clicked card type
+  // Reset quiz state whenever a new artifact is inspected
   React.useEffect(() => {
-    if (artifact) {
-      if (artifact.type === 'examples') setActiveTab('examples');
-      else if (artifact.type === 'quiz') setActiveTab('quiz');
-      else setActiveTab('overview');
-      setSelectedQuizOption(null);
-      setQuizSubmitted(false);
-    }
+    setSelectedQuizOption(null);
+    setQuizSubmitted(false);
   }, [artifact]);
 
   if (!artifact) return null;
 
   const handleCopyNotes = () => {
-    const fullText = `# ${artifact.title} (${artifact.path})\n\n## Key Overview\n${artifact.overviewMarkdown}\n\n## Worked Examples\n${artifact.workedExamplesMarkdown}`;
-    navigator.clipboard.writeText(fullText);
+    let textToCopy = '';
+    if (artifact.type === 'overview') {
+      textToCopy = `# ${artifact.title}\n\n${artifact.overviewMarkdown}`;
+    } else if (artifact.type === 'examples') {
+      textToCopy = `# ${artifact.title}\n\n${artifact.workedExamplesMarkdown}`;
+    } else if (artifact.type === 'quiz' && artifact.quizData) {
+      textToCopy = `# ${artifact.title}\n\nQuestion: ${artifact.quizData.question}\n\nOptions:\n${artifact.quizData.options.map((o, idx) => `${idx + 1}. ${o}`).join('\n')}\n\nCorrect Answer: ${artifact.quizData.options[artifact.quizData.correctIndex]}\nExplanation: ${artifact.quizData.explanation}`;
+    } else {
+      textToCopy = `# ${artifact.title}\n\n${artifact.overviewMarkdown}`;
+    }
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -56,49 +68,31 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
           transition={{ type: 'spring', stiffness: 400, damping: 28 }}
           className="relative w-full max-w-3xl max-h-[88vh] flex flex-col rounded-2xl bg-white border border-slate-200 shadow-xl overflow-hidden"
         >
-          {/* Header */}
+          {/* Header - Clean, without file path badge and without mark as done */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 shadow-xs">
-                <BookOpen className="w-5 h-5" />
+              <div
+                className={`p-2 rounded-xl border shadow-xs ${
+                  artifact.type === 'overview'
+                    ? 'bg-purple-50 border-purple-200 text-purple-700'
+                    : artifact.type === 'examples'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    : 'bg-blue-50 border-blue-200 text-blue-700'
+                }`}
+              >
+                {artifact.type === 'overview' && <BookOpen className="w-5 h-5" />}
+                {artifact.type === 'examples' && <Calculator className="w-5 h-5" />}
+                {artifact.type === 'quiz' && <HelpCircle className="w-5 h-5" />}
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-slate-900 font-sans">
-                    {artifact.title}
-                  </h2>
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
-                    {artifact.path}
-                  </span>
-                </div>
+                <h2 className="text-base font-bold text-slate-900 font-sans">
+                  {artifact.title}
+                </h2>
                 <p className="text-xs text-slate-500 mt-0.5">{artifact.tagline}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {onToggleCompleted && (
-                <button
-                  onClick={() => onToggleCompleted(artifact.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-colors cursor-pointer border shadow-xs ${
-                    isCompleted
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold hover:bg-emerald-100'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                  }`}
-                  title={isCompleted ? 'Mark as incomplete' : 'Mark as completed'}
-                >
-                  <div
-                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                      isCompleted
-                        ? 'bg-emerald-600 border-emerald-600 text-white'
-                        : 'border-slate-400 bg-white'
-                    }`}
-                  >
-                    {isCompleted && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                  </div>
-                  <span>{isCompleted ? 'Completed' : 'Mark Done'}</span>
-                </button>
-              )}
-
               <button
                 onClick={handleCopyNotes}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors cursor-pointer shadow-xs"
@@ -117,53 +111,15 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
             </div>
           </div>
 
-          {/* Navigation Tabs */}
-          <div className="flex border-b border-slate-200 bg-slate-50/40 px-6 gap-2 pt-2">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`flex items-center gap-1.5 pb-2.5 px-3 text-xs font-mono border-b-2 transition-colors cursor-pointer ${
-                activeTab === 'overview'
-                  ? 'border-emerald-600 text-emerald-800 font-bold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>1. Key Overview</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('examples')}
-              className={`flex items-center gap-1.5 pb-2.5 px-3 text-xs font-mono border-b-2 transition-colors cursor-pointer ${
-                activeTab === 'examples'
-                  ? 'border-emerald-600 text-emerald-800 font-bold'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <Code2 className="w-3.5 h-3.5" />
-              <span>2. Practical Example & Solution</span>
-            </button>
-            {artifact.quizData && (
-              <button
-                onClick={() => setActiveTab('quiz')}
-                className={`flex items-center gap-1.5 pb-2.5 px-3 text-xs font-mono border-b-2 transition-colors cursor-pointer ${
-                  activeTab === 'quiz'
-                    ? 'border-emerald-600 text-emerald-800 font-bold'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span>3. Self-Check Quiz</span>
-              </button>
-            )}
-          </div>
-
-          {/* Tab Body */}
+          {/* Modal Content: Each artifact opens ONLY its own content (No Tab Bar!) */}
           <div className="flex-1 overflow-y-auto p-6 bg-white text-slate-700 text-xs leading-relaxed">
-            {activeTab === 'overview' && (
+            {/* 1. KEY CONCEPTS & OVERVIEW ONLY */}
+            {artifact.type === 'overview' && (
               <div className="space-y-4">
                 <div className="p-3.5 rounded-xl bg-purple-50/80 border border-purple-200 flex items-start gap-2.5">
                   <Sparkles className="w-4 h-4 text-purple-700 shrink-0 mt-0.5" />
                   <p className="text-xs text-purple-900 font-sans">
-                    <strong>Pedagogical Master Notes:</strong> Distilled concepts, authentic mathematical formulas, and verified mental models extracted directly from your curriculum.
+                    <strong>Core Curriculum Notes:</strong> Master definitions, geometric formulas, and mental models synthesized directly from your chapter.
                   </p>
                 </div>
 
@@ -173,8 +129,16 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
               </div>
             )}
 
-            {activeTab === 'examples' && (
+            {/* 2. PRACTICAL EXAMPLE & WORKED SOLUTION ONLY */}
+            {artifact.type === 'examples' && (
               <div className="space-y-4">
+                <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex items-start gap-2.5">
+                  <Calculator className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                  <p className="text-xs text-emerald-900 font-sans">
+                    <strong>Step-by-Step Verified Solution:</strong> Methodical problem walkthrough with substitution, parentheses rules, and verified computations.
+                  </p>
+                </div>
+
                 {artifact.workedExamplesMarkdown.trim().startsWith('//') ||
                 artifact.workedExamplesMarkdown.includes('```') ||
                 artifact.workedExamplesMarkdown.includes('function ') ||
@@ -182,8 +146,8 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
                 artifact.workedExamplesMarkdown.includes('def ') ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono text-purple-800 font-bold">
-                        Code Implementation & Execution
+                      <span className="text-xs font-mono text-emerald-800 font-bold">
+                        Code Implementation &amp; Execution
                       </span>
                     </div>
                     <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 font-mono text-xs overflow-x-auto leading-relaxed shadow-xs">
@@ -193,22 +157,23 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono text-purple-800 font-bold">
-                        Verified Step-by-Step Problem &amp; Solution
-                      </span>
-                    </div>
-                    <div className="p-2 sm:p-4 rounded-2xl bg-white border border-slate-100 shadow-2xs">
-                      <MarkdownViewer content={artifact.workedExamplesMarkdown} />
-                    </div>
+                  <div className="p-2 sm:p-4 rounded-2xl bg-white border border-slate-100 shadow-2xs">
+                    <MarkdownViewer content={artifact.workedExamplesMarkdown} />
                   </div>
                 )}
               </div>
             )}
 
-            {activeTab === 'quiz' && artifact.quizData && (
+            {/* 3. EXAM REVIEW & SELF-CHECK QUIZ ONLY */}
+            {artifact.type === 'quiz' && artifact.quizData && (
               <div className="space-y-5">
+                <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200 flex items-start gap-2.5">
+                  <HelpCircle className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-900 font-sans">
+                    <strong>Self-Check Challenge:</strong> Test your understanding with an authentic exam-style concept question.
+                  </p>
+                </div>
+
                 <div className="p-5 rounded-xl bg-slate-50 border border-slate-200">
                   <span className="text-[11px] font-mono text-blue-700 font-bold block mb-1.5">
                     PRACTICE EXAM QUESTION
