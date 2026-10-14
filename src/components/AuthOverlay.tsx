@@ -12,15 +12,24 @@ import {
   ShieldCheck,
   GraduationCap,
   LogOut,
+  AlertTriangle,
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import { ScholarUser, ScholarArchetype } from '../types';
-import { ARCHETYPES, saveStoredUser } from '../utils/authStorage';
+import {
+  ARCHETYPES,
+  saveStoredUser,
+  authenticateUser,
+  registerScholarUser,
+} from '../utils/authStorage';
 import {
   registerWithFirebase,
   loginWithFirebase,
   signInWithGooglePopup,
   signOutScholar,
 } from '../lib/firebase';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthOverlayProps {
   isOpen: boolean;
@@ -55,6 +64,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   // UI States
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [authErrorCode, setAuthErrorCode] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
@@ -73,11 +83,49 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const strength = getPasswordStrength(password);
   const activeArchetypeObj = ARCHETYPES[selectedArchetype];
 
+  // Helper for immediate local scholar access (fallback when Firebase is unconfigured locally)
+  const handleLocalScholarAccess = (customName?: string, customEmail?: string) => {
+    const defaultArchetype: ScholarArchetype = selectedArchetype || 'midnight_owl';
+    const detail = ARCHETYPES[defaultArchetype] || ARCHETYPES.midnight_owl;
+    const scholarName = customName || fullName.trim() || 'Alex Scholar';
+    const scholarEmail = customEmail || email.trim() || identifier.trim() || 'scholar.local@microdo.space';
+    const scholarUsername = username.trim() || scholarEmail.split('@')[0] || 'scholar_local';
+
+    const localScholar: ScholarUser = {
+      id: `local-${Date.now().toString(36)}`,
+      email: scholarEmail,
+      fullName: scholarName,
+      username: scholarUsername,
+      role: 'scholar',
+      archetype: defaultArchetype,
+      archetypeLabel: detail.label,
+      avatarEmoji: detail.emoji,
+      majorOrFocus: majorFocus || 'Computer Systems',
+      joinedAt: new Date().toISOString().split('T')[0],
+    };
+
+    saveStoredUser(localScholar);
+    setSuccessNotice(`Unlocked session as Local Scholar: ${localScholar.fullName}!`);
+    setTimeout(() => {
+      setIsSubmitting(false);
+      setIsGoogleSubmitting(false);
+      onLoginSuccess(localScholar);
+      onClose();
+    }, 450);
+  };
+
   // Map Firebase errors to human friendly text
   const formatAuthError = (err: any): string => {
     const code = err?.code || '';
     const msg = err?.message || '';
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
+    if (code === 'auth/unauthorized-domain') {
+      return `Domain "${host}" is not authorized for Google Sign-In in Firebase project (${firebaseConfig.projectId}). Add it in Firebase Console or continue as Local Scholar.`;
+    }
+    if (code === 'auth/operation-not-allowed') {
+      return `Email/Password sign-in is disabled in Firebase project (${firebaseConfig.projectId}). Please enable it in Firebase Console or continue locally.`;
+    }
     if (code === 'auth/email-already-in-use') {
       return 'This email is already registered. Please switch to Sign In.';
     }
@@ -103,6 +151,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setAuthErrorCode(null);
     setIsSubmitting(true);
 
     try {
@@ -119,7 +168,27 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           return;
         }
 
-        const authenticatedUser = await loginWithFirebase(cleanIdent, password);
+        let authenticatedUser: ScholarUser;
+        try {
+          authenticatedUser = await loginWithFirebase(cleanIdent, password);
+        } catch (firebaseErr: any) {
+          // Check local scholar accounts if Firebase fails
+          const localUser = authenticateUser(cleanIdent, password);
+          if (localUser) {
+            authenticatedUser = localUser;
+          } else if (
+            firebaseErr?.code === 'auth/operation-not-allowed' ||
+            firebaseErr?.code === 'auth/unauthorized-domain'
+          ) {
+            setAuthErrorCode(firebaseErr.code);
+            setErrorMsg(formatAuthError(firebaseErr));
+            setIsSubmitting(false);
+            return;
+          } else {
+            throw firebaseErr;
+          }
+        }
+
         saveStoredUser(authenticatedUser);
         setSuccessNotice(`Welcome back, ${authenticatedUser.fullName}!`);
         setTimeout(() => {
@@ -148,17 +217,39 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           return;
         }
 
-        const newUser = await registerWithFirebase({
-          email: cleanEmail,
-          password,
-          fullName: cleanName,
-          username: cleanUsername,
-          archetype: selectedArchetype,
-          majorOrFocus: majorFocus || 'Computer Systems',
-        });
+        let newUser: ScholarUser;
+        try {
+          newUser = await registerWithFirebase({
+            email: cleanEmail,
+            password,
+            fullName: cleanName,
+            username: cleanUsername,
+            archetype: selectedArchetype,
+            majorOrFocus: majorFocus || 'Computer Systems',
+          });
+        } catch (firebaseErr: any) {
+          if (
+            firebaseErr?.code === 'auth/operation-not-allowed' ||
+            firebaseErr?.code === 'auth/unauthorized-domain'
+          ) {
+            // Graceful fallback to local scholar storage
+            newUser = registerScholarUser({
+              email: cleanEmail,
+              fullName: cleanName,
+              username: cleanUsername,
+              role: 'scholar',
+              archetype: selectedArchetype,
+              archetypeLabel: ARCHETYPES[selectedArchetype].label,
+              avatarEmoji: ARCHETYPES[selectedArchetype].emoji,
+              majorOrFocus: majorFocus || 'Computer Systems',
+            });
+          } else {
+            throw firebaseErr;
+          }
+        }
 
         saveStoredUser(newUser);
-        setSuccessNotice(`Account created in database for ${newUser.fullName}!`);
+        setSuccessNotice(`Account active for ${newUser.fullName}!`);
         setTimeout(() => {
           setIsSubmitting(false);
           onLoginSuccess(newUser);
@@ -167,6 +258,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
       }
     } catch (err: any) {
       console.error('Auth error:', err);
+      setAuthErrorCode(err?.code || null);
       setErrorMsg(formatAuthError(err));
       setIsSubmitting(false);
     }
@@ -175,6 +267,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   // Google Popup Sign In Handler
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
+    setAuthErrorCode(null);
     setIsGoogleSubmitting(true);
     try {
       const googleUser = await signInWithGooglePopup();
@@ -187,6 +280,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
       }, 500);
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user') {
+        setAuthErrorCode(err?.code || null);
         setErrorMsg(formatAuthError(err));
       }
       setIsGoogleSubmitting(false);
@@ -302,19 +396,112 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-2.5"
+                className="overflow-hidden"
               >
-                <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                  <span className="font-medium font-sans">{errorMsg}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setErrorMsg(null)}
-                  className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                {authErrorCode === 'auth/unauthorized-domain' ? (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-2.5 shadow-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-semibold block text-amber-950 font-sans">
+                            Domain &quot;{typeof window !== 'undefined' ? window.location.hostname : 'localhost'}&quot; Not Authorized
+                          </span>
+                          <span className="text-amber-800 text-[11px] leading-relaxed block mt-0.5">
+                            Firebase Authentication blocks Google Sign-In because this domain is not on your project&apos;s Authorized Domains list.
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setErrorMsg(null); setAuthErrorCode(null); }}
+                        className="text-amber-500 hover:text-amber-700 cursor-pointer p-0.5"
+                        title="Dismiss"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60">
+                      <a
+                        href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium text-[11px] transition-colors shadow-xs"
+                      >
+                        <span>Add domain in Firebase Console</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleLocalScholarAccess('Google Scholar (Local)', 'scholar.google@microdo.space')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100/50 text-amber-900 font-medium text-[11px] border border-amber-300 transition-colors cursor-pointer"
+                      >
+                        <Sparkles className="w-3 h-3 text-amber-600" />
+                        <span>Continue as Local Scholar</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : authErrorCode === 'auth/operation-not-allowed' ? (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-2.5 shadow-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-semibold block text-amber-950 font-sans">
+                            Firebase Email/Password Disabled
+                          </span>
+                          <span className="text-amber-800 text-[11px] leading-relaxed block mt-0.5">
+                            Email authentication is disabled in Firebase console for project <code className="font-mono bg-amber-100 px-1 py-0.5 rounded text-[10px]">{firebaseConfig.projectId}</code>.
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setErrorMsg(null); setAuthErrorCode(null); }}
+                        className="text-amber-500 hover:text-amber-700 cursor-pointer p-0.5"
+                        title="Dismiss"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60">
+                      <a
+                        href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/providers`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium text-[11px] transition-colors shadow-xs"
+                      >
+                        <span>Enable in Firebase Console</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleLocalScholarAccess()}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100/50 text-amber-900 font-medium text-[11px] border border-amber-300 transition-colors cursor-pointer"
+                      >
+                        <Sparkles className="w-3 h-3 text-amber-600" />
+                        <span>Continue as Local Scholar</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      <span className="font-medium font-sans">{errorMsg}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setErrorMsg(null); setAuthErrorCode(null); }}
+                      className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                      title="Dismiss"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -577,6 +764,18 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 className="text-indigo-600 hover:text-indigo-800 font-medium transition-colors cursor-pointer text-xs"
               >
                 {mode === 'login' ? 'Need an account? Register' : 'Already registered? Sign In'}
+              </button>
+            </div>
+
+            {/* Offline / Local Scholar Quick Option */}
+            <div className="pt-1 text-center">
+              <button
+                type="button"
+                onClick={() => handleLocalScholarAccess('Scholar (Guest)', 'guest.scholar@microdo.space')}
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-indigo-600 transition-colors py-1 px-2.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <Sparkles className="w-3 h-3 text-indigo-500" />
+                <span>Or continue instantly as Guest Scholar (offline/local mode)</span>
               </button>
             </div>
           </form>
