@@ -18,6 +18,8 @@ import {
   Award,
   ShieldCheck,
   Info,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { StudyArtifact, TopicMasteryRecord, MasteryState } from '../types';
 import { MarkdownViewer } from './MarkdownViewer';
@@ -33,6 +35,10 @@ interface StudyInspectorModalProps {
   isCompleted?: boolean;
   onToggleCompleted?: (id: string) => void;
   onClose: () => void;
+  hasPrevious?: boolean;
+  hasNext?: boolean;
+  onPreviousArtifact?: () => void;
+  onNextArtifact?: () => void;
   onOpenFocusMode?: (artifact: StudyArtifact) => void;
   onMasteryUpdated?: (topicId: string, record: TopicMasteryRecord) => void;
   onRegenerateLesson?: (artifactId: string) => void;
@@ -47,6 +53,10 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
   isCompleted = false,
   onToggleCompleted,
   onClose,
+  hasPrevious = false,
+  hasNext = false,
+  onPreviousArtifact,
+  onNextArtifact,
   onOpenFocusMode,
   onMasteryUpdated,
   onRegenerateLesson,
@@ -547,13 +557,35 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-500 font-mono">
+          <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-500 font-mono">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
               <span>Autosaved locally &amp; session synced</span>
             </div>
 
             <div className="flex items-center gap-2">
+              {onPreviousArtifact && (
+                <button
+                  type="button"
+                  onClick={onPreviousArtifact}
+                  disabled={!hasPrevious}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 font-sans font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Back
+                </button>
+              )}
+              {onNextArtifact && (
+                <button
+                  type="button"
+                  onClick={onNextArtifact}
+                  disabled={!hasNext}
+                  className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1.5 font-sans font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              )}
               {onToggleCompleted && (
                 <button
                   onClick={() => onToggleCompleted(artifact.id)}

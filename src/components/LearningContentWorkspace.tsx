@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clipboard,
   Maximize2,
@@ -22,6 +23,10 @@ interface LearningContentWorkspaceProps {
   isCompleted: boolean;
   onToggleCompleted: (artifactId: string) => void;
   onClose: () => void;
+  hasPrevious?: boolean;
+  hasNext?: boolean;
+  onPreviousArtifact?: () => void;
+  onNextArtifact?: () => void;
   onOpenFocusMode?: (artifact: StudyArtifact) => void;
   onRegenerateLesson?: (artifactId: string) => void;
   isRegenerating?: boolean;
@@ -35,6 +40,10 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
   isCompleted,
   onToggleCompleted,
   onClose,
+  hasPrevious = false,
+  hasNext = false,
+  onPreviousArtifact,
+  onNextArtifact,
   onOpenFocusMode,
   onRegenerateLesson,
   isRegenerating = false,
@@ -302,6 +311,29 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
           </article>
         </div>
       </main>
+
+      {(onPreviousArtifact || onNextArtifact) && (
+        <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-8">
+          <button
+            type="button"
+            onClick={onPreviousArtifact}
+            disabled={!hasPrevious}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={onNextArtifact}
+            disabled={!hasNext}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </footer>
+      )}
 
       {isContentsOpen && (
         <div

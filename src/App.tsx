@@ -687,6 +687,17 @@ export default function App() {
   const completedArtifactsCount = allCourseArtifacts.filter((a) =>
     completedArtifactIds.includes(a.id)
   ).length;
+  const artifactSequence = activeTopic?.artifacts || [];
+  const inspectedArtifactIndex = inspectedArtifact
+    ? artifactSequence.findIndex((artifact) => artifact.id === inspectedArtifact.id)
+    : -1;
+  const hasPreviousArtifact = inspectedArtifactIndex > 0;
+  const hasNextArtifact =
+    inspectedArtifactIndex >= 0 && inspectedArtifactIndex < artifactSequence.length - 1;
+  const navigateInspectedArtifact = (offset: number) => {
+    const nextArtifact = artifactSequence[inspectedArtifactIndex + offset];
+    if (nextArtifact) setInspectedArtifact(nextArtifact);
+  };
 
   if (guardianConsentRequestId) {
     return (
@@ -1000,6 +1011,14 @@ export default function App() {
           isCompleted={completedArtifactIds.includes(inspectedArtifact.id)}
           onToggleCompleted={handleToggleArtifactCompleted}
           onClose={() => setInspectedArtifact(null)}
+          hasPrevious={hasPreviousArtifact}
+          hasNext={hasNextArtifact}
+          onPreviousArtifact={
+            inspectedArtifactIndex >= 0 ? () => navigateInspectedArtifact(-1) : undefined
+          }
+          onNextArtifact={
+            inspectedArtifactIndex >= 0 ? () => navigateInspectedArtifact(1) : undefined
+          }
           onOpenFocusMode={(art) => {
             setFocusArtifact(art);
             setIsFocusModeOpen(true);
@@ -1017,6 +1036,14 @@ export default function App() {
           isCompleted={completedArtifactIds.includes(inspectedArtifact.id)}
           onToggleCompleted={handleToggleArtifactCompleted}
           onClose={() => setInspectedArtifact(null)}
+          hasPrevious={hasPreviousArtifact}
+          hasNext={hasNextArtifact}
+          onPreviousArtifact={
+            inspectedArtifactIndex >= 0 ? () => navigateInspectedArtifact(-1) : undefined
+          }
+          onNextArtifact={
+            inspectedArtifactIndex >= 0 ? () => navigateInspectedArtifact(1) : undefined
+          }
           onOpenFocusMode={(art) => {
             setFocusArtifact(art);
             setIsFocusModeOpen(true);
