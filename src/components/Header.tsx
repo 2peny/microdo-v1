@@ -25,6 +25,7 @@ interface HeaderProps {
   onResetFlow: () => void;
   currentUser?: ScholarUser | null;
   onOpenAuth?: (mode?: 'login' | 'register') => void;
+  onSignOut?: () => Promise<void>;
   onOpenSuperuser?: () => void;
   onOpenGuardian?: () => void;
   currentView?: 'dashboard' | 'workspace';
@@ -38,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
   courseName,
   currentUser,
   onOpenAuth,
+  onSignOut,
   onOpenUploadModal,
   onResetFlow,
   onOpenSuperuser,
@@ -49,6 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
   offlinePendingCount = 0,
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
   // Close profile dropdown on outside click or Escape key
@@ -338,6 +341,33 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
 
+              {currentUser && onSignOut && (
+                <div className="border-t border-slate-100 py-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setSignOutError(null);
+                      try {
+                        await onSignOut();
+                        setIsProfileOpen(false);
+                      } catch (error) {
+                        setSignOutError(error instanceof Error ? error.message : 'Sign out failed. Please try again.');
+                      }
+                    }}
+                    className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-rose-700"
+                    role="menuitem"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </button>
+                  {signOutError && (
+                    <p role="alert" className="px-4 pb-2 text-[11px] text-rose-700">
+                      {signOutError}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* Authentication / Account Overlay trigger */}
               {onOpenAuth && (
                 <div className="pt-1 mt-1 border-t border-slate-100">
@@ -346,7 +376,7 @@ export const Header: React.FC<HeaderProps> = ({
                       setIsProfileOpen(false);
                       onOpenAuth('login');
                     }}
-                    className="w-full px-4 py-2 text-left text-xs text-indigo-700 hover:bg-indigo-50/60 flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
+                    className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
                     role="menuitem"
                   >
                     <span>{currentUser ? 'Scholar Passport & Account' : 'Sign In / Register'}</span>

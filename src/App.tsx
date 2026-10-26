@@ -328,11 +328,13 @@ export default function App() {
   const canOpenSuperuser =
     verifiedAdminId !== null && currentUser?.id === verifiedAdminId;
 
-  const handleGuardianSignOut = async () => {
+  const handleSignOut = async () => {
     await signOutScholar();
     saveStoredUser(null);
     setCurrentUser(null);
     setCurrentWorkspace('learner');
+    setVerifiedAdminId(null);
+    setIsSuperuserOpen(false);
   };
 
   const handleOpenAuth = (mode: 'login' | 'register' = 'login') => {
@@ -750,7 +752,7 @@ export default function App() {
             ? () => setCurrentWorkspace('learner')
             : undefined
         }
-        onSignOut={handleGuardianSignOut}
+        onSignOut={handleSignOut}
       />
     );
   }
@@ -769,6 +771,7 @@ export default function App() {
         onResetFlow={handleResetFlow}
         currentUser={currentUser}
         onOpenAuth={handleOpenAuth}
+        onSignOut={handleSignOut}
         onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
         onOpenGuardian={
           currentUser?.roles?.includes('PARENT_GUARDIAN')

@@ -3,18 +3,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
   Lock,
-  User,
-  Mail,
   Eye,
   EyeOff,
   CheckCircle2,
-  ArrowRight,
-  ShieldCheck,
-  GraduationCap,
   LogOut,
   AlertTriangle,
   ExternalLink,
-  Sparkles,
 } from 'lucide-react';
 import { ScholarUser, ScholarArchetype } from '../types';
 import {
@@ -75,11 +69,11 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
   // Password Strength Calculation
   const getPasswordStrength = (pass: string) => {
-    if (!pass) return { score: 0, label: 'Uninked', color: 'text-slate-400', bar: 'w-0 bg-slate-300' };
-    if (pass.length < 6) return { score: 1, label: '✏️ Short (<6 chars)', color: 'text-amber-500', bar: 'w-1/4 bg-amber-400' };
-    if (pass.length < 8) return { score: 2, label: '🖋️ Moderate', color: 'text-blue-500', bar: 'w-2/4 bg-blue-500' };
-    if (pass.length < 12) return { score: 3, label: '📜 Strong', color: 'text-indigo-600', bar: 'w-3/4 bg-indigo-600' };
-    return { score: 4, label: '🏛️ Fortress Grade', color: 'text-emerald-600', bar: 'w-full bg-emerald-500' };
+    if (!pass) return { score: 0, label: '', color: 'text-slate-400', bar: 'w-0 bg-slate-300' };
+    if (pass.length < 6) return { score: 1, label: 'Too short', color: 'text-amber-700', bar: 'w-1/4 bg-amber-500' };
+    if (pass.length < 8) return { score: 2, label: 'Fair', color: 'text-sky-700', bar: 'w-2/4 bg-sky-600' };
+    if (pass.length < 12) return { score: 3, label: 'Good', color: 'text-indigo-700', bar: 'w-3/4 bg-indigo-600' };
+    return { score: 4, label: 'Strong', color: 'text-emerald-700', bar: 'w-full bg-emerald-600' };
   };
 
   const handlePasswordReset = async () => {
@@ -302,67 +296,55 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="auth-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/45 overflow-y-auto"
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.94, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.94, y: 12 }}
         transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-        className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[94vh] flex flex-col"
+        className="relative w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden my-auto max-h-[94vh] flex flex-col"
       >
-        {/* Header Ribbon */}
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 shrink-0 relative overflow-hidden">
-          <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-indigo-500/10 pointer-events-none blur-xl" />
-
-          <div className="flex items-center justify-between relative z-10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 backdrop-blur-sm flex items-center justify-center text-xl shadow-inner">
-                {mode === 'register' ? activeArchetypeObj.emoji : '🎓'}
-              </div>
-              <div>
-                <span className="text-[11px] font-mono tracking-widest text-indigo-300 uppercase font-semibold block">
-                  MicroDo Station Access
-                </span>
-                <h2 id="auth-modal-title" className="text-lg sm:text-xl font-bold tracking-tight text-white font-sans">
-                  {mode === 'login' ? 'Sign In to Station' : 'Create Real Account'}
+        <div className="border-b border-slate-200 bg-white px-5 py-4 sm:px-6 shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <span className="text-xs font-medium text-slate-500">MicroDo account</span>
+              <h2 id="auth-modal-title" className="mt-1 text-xl font-semibold tracking-tight text-slate-900">
+                  {mode === 'login' ? 'Sign in' : 'Create your account'}
                 </h2>
-              </div>
             </div>
-
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer"
               title="Close overlay"
               aria-label="Close authentication modal"
             >
-              <X className="w-5 h-5" />
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          {/* Clean Mode Switcher Tabs */}
-          <div className="flex items-center gap-1.5 mt-4 p-1 rounded-xl bg-white/10 backdrop-blur-md border border-white/10 text-xs">
+          <div className="mt-4 flex gap-5 border-b border-slate-100 text-sm">
             <button
               type="button"
               onClick={() => { setMode('login'); setErrorMsg(null); }}
-              className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition-all text-center cursor-pointer ${
+              className={`border-b-2 pb-2 font-medium transition-colors cursor-pointer ${
                 mode === 'login'
-                  ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                  : 'text-slate-300 hover:text-white'
+                  ? 'border-indigo-600 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              Sign In
+              Sign in
             </button>
             <button
               type="button"
               onClick={() => { setMode('register'); setErrorMsg(null); }}
-              className={`flex-1 py-1.5 px-3 rounded-lg font-medium transition-all text-center cursor-pointer ${
+              className={`border-b-2 pb-2 font-medium transition-colors cursor-pointer ${
                 mode === 'register'
-                  ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                  : 'text-slate-300 hover:text-white'
+                  ? 'border-indigo-600 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              Register Real User
+              Register
             </button>
           </div>
         </div>
@@ -437,7 +419,6 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                         onClick={() => handleLocalScholarAccess('Google Scholar (Local)', 'scholar.google@microdo.space')}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100/50 text-amber-900 font-medium text-[11px] border border-amber-300 transition-colors cursor-pointer"
                       >
-                        <Sparkles className="w-3 h-3 text-amber-600" />
                         <span>Continue as Local Scholar</span>
                       </button>
                     </div>
@@ -481,7 +462,6 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                         onClick={() => handleLocalScholarAccess()}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100/50 text-amber-900 font-medium text-[11px] border border-amber-300 transition-colors cursor-pointer"
                       >
-                        <Sparkles className="w-3 h-3 text-amber-600" />
                         <span>Continue as Local Scholar</span>
                       </button>
                     </div>
@@ -575,19 +555,14 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Full Name
                   </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                      <User className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="text"
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="e.g. your real name"
-                      className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="e.g. your real name"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -595,38 +570,28 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Email Address
                     </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                        <Mail className="w-4 h-4" />
-                      </div>
-                      <input
+                    <input
                         type="email"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="you@domain.com"
-                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
                       />
-                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Username / Handle
                     </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                        <span className="font-mono text-xs">@</span>
-                      </div>
-                      <input
+                    <input
                         type="text"
                         required
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         placeholder="username"
-                        className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
                       />
-                    </div>
                   </div>
                 </div>
 
@@ -652,40 +617,20 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
 
                 {/* Archetype Picker */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                    <span>Study Style Archetype</span>
-                    <span className="text-[10px] font-mono text-indigo-600 font-normal">
-                      {activeArchetypeObj.trait}
-                    </span>
+                  <label htmlFor="study-style-archetype" className="mb-1 block text-xs font-semibold text-slate-700">
+                    Study style
                   </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {(Object.keys(ARCHETYPES) as ScholarArchetype[]).map((key) => {
-                      const item = ARCHETYPES[key];
-                      const isSelected = selectedArchetype === key;
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => setSelectedArchetype(key)}
-                          className={`p-2 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
-                            isSelected
-                              ? 'border-indigo-600 bg-indigo-50/70 ring-1 ring-indigo-500'
-                              : 'border-slate-200 hover:border-slate-300 bg-white'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-base">{item.emoji}</span>
-                            <span className={`text-xs font-semibold truncate ${isSelected ? 'text-indigo-900' : 'text-slate-800'}`}>
-                              {item.label}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 line-clamp-1 mt-1 font-mono">
-                            {item.motto}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <select
+                    id="study-style-archetype"
+                    value={selectedArchetype}
+                    onChange={(event) => setSelectedArchetype(event.target.value as ScholarArchetype)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {(Object.keys(ARCHETYPES) as ScholarArchetype[]).map((key) => (
+                      <option key={key} value={key}>{ARCHETYPES[key].label}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-500">{activeArchetypeObj.trait}</p>
                 </div>
 
                 {/* Academic Focus / Major */}
@@ -693,18 +638,13 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Discipline / Field of Study
                   </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                      <GraduationCap className="w-4 h-4" />
-                    </div>
-                    <input
+                  <input
                       type="text"
                       value={majorFocus}
                       onChange={(e) => setMajorFocus(e.target.value)}
                       placeholder="e.g. Computer Science, Medicine, Law"
-                      className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
                     />
-                  </div>
                 </div>
               </div>
             )}
@@ -715,19 +655,14 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Email Address
                 </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <input
+                <input
                     type="email"
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder="Enter your registered email"
-                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
                   />
-                </div>
                 <button
                   type="button"
                   onClick={() => void handlePasswordReset()}
@@ -744,21 +679,18 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 <label className="block text-xs font-semibold text-slate-700">
                   Password
                 </label>
-                <span className={`text-[10px] font-mono ${strength.color}`}>
+                <span className={`text-[10px] ${strength.color}`}>
                   {strength.label}
                 </span>
               </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password (min 6 characters)"
-                  className="w-full pl-9 pr-10 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white font-mono"
+                  className="w-full px-3 pr-10 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
                 />
                 <button
                   type="button"
@@ -781,36 +713,21 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting || isGoogleSubmitting}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-semibold text-xs transition-all shadow-md hover:shadow-lg disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2 group"
+                className="w-full py-2.5 px-4 rounded-lg bg-indigo-700 hover:bg-indigo-800 active:bg-indigo-900 text-white font-semibold text-sm transition-colors disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2 group"
               >
                 {isSubmitting ? (
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    <span>{mode === 'login' ? 'Sign In' : 'Create Account in Database'}</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    <span>{mode === 'login' ? 'Sign in' : 'Create account'}</span>
                   </>
                 )}
               </button>
             </div>
 
             {/* Bottom Switcher */}
-            <div className="flex items-center justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-100">
-              <div className="flex items-center gap-1.5 font-mono text-[10px]">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Verified Auth & Firestore DB</span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setMode(mode === 'login' ? 'register' : 'login');
-                  setErrorMsg(null);
-                }}
-                className="text-indigo-600 hover:text-indigo-800 font-medium transition-colors cursor-pointer text-xs"
-              >
-                {mode === 'login' ? 'Need an account? Register' : 'Already registered? Sign In'}
-              </button>
+            <div className="flex items-center justify-center text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+              <span>Secure account access</span>
             </div>
 
             {/* Offline / Local Scholar Quick Option */}
@@ -818,10 +735,9 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
               <button
                 type="button"
                 onClick={() => handleLocalScholarAccess('Scholar (Guest)', 'guest.scholar@microdo.space')}
-                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-indigo-600 transition-colors py-1 px-2.5 rounded-lg hover:bg-slate-100 cursor-pointer"
+                className="inline-flex items-center text-[11px] font-medium text-slate-500 hover:text-indigo-700 transition-colors py-1 px-2 cursor-pointer"
               >
-                <Sparkles className="w-3 h-3 text-indigo-500" />
-                <span>Or continue instantly as Guest Scholar (offline/local mode)</span>
+                <span>Continue as a guest (local mode)</span>
               </button>
             </div>
 
@@ -843,10 +759,11 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
               <button
                 type="button"
                 onClick={handleSignOut}
-                className="p-1 rounded text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                title="Sign out"
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-slate-600 hover:bg-slate-100 hover:text-rose-700 transition-colors cursor-pointer"
+                aria-label="Sign out"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Sign out</span>
               </button>
             </div>
           </div>
