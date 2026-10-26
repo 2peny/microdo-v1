@@ -687,16 +687,27 @@ export default function App() {
   const completedArtifactsCount = allCourseArtifacts.filter((a) =>
     completedArtifactIds.includes(a.id)
   ).length;
-  const artifactSequence = activeTopic?.artifacts || [];
+  const artifactSequence = currentCourse.modules.flatMap((module) =>
+    module.blueRoadmap.topics.flatMap((topic) =>
+      topic.artifacts.map((artifact) => ({
+        moduleId: module.id,
+        topicId: topic.id,
+        artifact,
+      }))
+    )
+  );
   const inspectedArtifactIndex = inspectedArtifact
-    ? artifactSequence.findIndex((artifact) => artifact.id === inspectedArtifact.id)
+    ? artifactSequence.findIndex(({ artifact }) => artifact.id === inspectedArtifact.id)
     : -1;
   const hasPreviousArtifact = inspectedArtifactIndex > 0;
   const hasNextArtifact =
     inspectedArtifactIndex >= 0 && inspectedArtifactIndex < artifactSequence.length - 1;
   const navigateInspectedArtifact = (offset: number) => {
-    const nextArtifact = artifactSequence[inspectedArtifactIndex + offset];
-    if (nextArtifact) setInspectedArtifact(nextArtifact);
+    const next = artifactSequence[inspectedArtifactIndex + offset];
+    if (!next) return;
+    setSelectedModuleId(next.moduleId);
+    setActiveTopicId(next.topicId);
+    setInspectedArtifact(next.artifact);
   };
 
   if (guardianConsentRequestId) {
@@ -1019,6 +1030,12 @@ export default function App() {
           onNextArtifact={
             inspectedArtifactIndex >= 0 ? () => navigateInspectedArtifact(1) : undefined
           }
+          onOpenGuardian={
+            currentUser?.roles?.includes('PARENT_GUARDIAN')
+              ? () => setCurrentWorkspace('guardian')
+              : undefined
+          }
+          onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
           onOpenFocusMode={(art) => {
             setFocusArtifact(art);
             setIsFocusModeOpen(true);
@@ -1044,6 +1061,12 @@ export default function App() {
           onNextArtifact={
             inspectedArtifactIndex >= 0 ? () => navigateInspectedArtifact(1) : undefined
           }
+          onOpenGuardian={
+            currentUser?.roles?.includes('PARENT_GUARDIAN')
+              ? () => setCurrentWorkspace('guardian')
+              : undefined
+          }
+          onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
           onOpenFocusMode={(art) => {
             setFocusArtifact(art);
             setIsFocusModeOpen(true);

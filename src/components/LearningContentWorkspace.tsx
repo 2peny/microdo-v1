@@ -9,11 +9,14 @@ import {
   Maximize2,
   MoreHorizontal,
   PanelLeft,
+  ShieldCheck,
+  Crown,
   X,
 } from 'lucide-react';
 import { StudyArtifact } from '../types';
 import { MarkdownViewer, extractMarkdownHeadings } from './MarkdownViewer';
 import { isRawOrCorruptedLesson } from '../utils/lessonDistiller';
+import { LearningVisual } from './LearningVisual';
 
 interface LearningContentWorkspaceProps {
   artifact: StudyArtifact;
@@ -27,6 +30,8 @@ interface LearningContentWorkspaceProps {
   hasNext?: boolean;
   onPreviousArtifact?: () => void;
   onNextArtifact?: () => void;
+  onOpenGuardian?: () => void;
+  onOpenSuperuser?: () => void;
   onOpenFocusMode?: (artifact: StudyArtifact) => void;
   onRegenerateLesson?: (artifactId: string) => void;
   isRegenerating?: boolean;
@@ -44,6 +49,8 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
   hasNext = false,
   onPreviousArtifact,
   onNextArtifact,
+  onOpenGuardian,
+  onOpenSuperuser,
   onOpenFocusMode,
   onRegenerateLesson,
   isRegenerating = false,
@@ -64,7 +71,8 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
 
   useEffect(() => {
     setActiveHeading(headings[0]?.id || '');
-  }, [headings]);
+    if (scrollAreaRef.current) scrollAreaRef.current.scrollTop = 0;
+  }, [artifact.id, headings]);
 
   useEffect(() => {
     const root = scrollAreaRef.current;
@@ -163,6 +171,30 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {onOpenGuardian && (
+            <button
+              type="button"
+              onClick={onOpenGuardian}
+              aria-label="Open Parent / Guardian workspace"
+              title="Open Parent / Guardian workspace"
+              className="inline-flex h-10 items-center gap-1 rounded-lg border border-slate-200 px-2 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:px-3"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              <span className="hidden md:inline">Guardian</span>
+            </button>
+          )}
+          {onOpenSuperuser && (
+            <button
+              type="button"
+              onClick={onOpenSuperuser}
+              aria-label="Open Owner Backend"
+              title="Open Owner Backend"
+              className="inline-flex h-10 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-xs font-medium text-amber-900 hover:bg-amber-100 sm:px-3"
+            >
+              <Crown className="h-4 w-4" />
+              <span className="hidden md:inline">Owner</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onToggleCompleted(artifact.id)}
@@ -265,6 +297,7 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
               </div>
             ) : (
               <>
+                <LearningVisual artifact={artifact} />
                 {!headings.some((heading) => heading.level === 1) && (
                   <h1
                     id="learning-content-title"

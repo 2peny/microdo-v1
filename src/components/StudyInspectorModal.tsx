@@ -20,6 +20,7 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  Crown,
 } from 'lucide-react';
 import { StudyArtifact, TopicMasteryRecord, MasteryState } from '../types';
 import { MarkdownViewer } from './MarkdownViewer';
@@ -39,6 +40,8 @@ interface StudyInspectorModalProps {
   hasNext?: boolean;
   onPreviousArtifact?: () => void;
   onNextArtifact?: () => void;
+  onOpenGuardian?: () => void;
+  onOpenSuperuser?: () => void;
   onOpenFocusMode?: (artifact: StudyArtifact) => void;
   onMasteryUpdated?: (topicId: string, record: TopicMasteryRecord) => void;
   onRegenerateLesson?: (artifactId: string) => void;
@@ -57,6 +60,8 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
   hasNext = false,
   onPreviousArtifact,
   onNextArtifact,
+  onOpenGuardian,
+  onOpenSuperuser,
   onOpenFocusMode,
   onMasteryUpdated,
   onRegenerateLesson,
@@ -237,6 +242,30 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
 
             {/* Actions */}
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {onOpenGuardian && (
+                <button
+                  type="button"
+                  onClick={onOpenGuardian}
+                  aria-label="Open Parent / Guardian workspace"
+                  title="Open Parent / Guardian workspace"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  <span className="hidden sm:inline">Guardian</span>
+                </button>
+              )}
+              {onOpenSuperuser && (
+                <button
+                  type="button"
+                  onClick={onOpenSuperuser}
+                  aria-label="Open Owner Backend"
+                  title="Open Owner Backend"
+                  className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  <Crown className="h-4 w-4" />
+                  <span className="hidden sm:inline">Owner</span>
+                </button>
+              )}
               {/* Focus Mode button */}
               {onOpenFocusMode && (
                 <button

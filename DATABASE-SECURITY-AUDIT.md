@@ -90,3 +90,11 @@ This is a repository audit, not a live penetration test or production database i
 - No new SQL table or migration was created. The new Firestore documents are schemaless and protected by the checked-in rules. No production data was modified.
 - Learner course, quiz, mastery, revision and dashboard components were not changed during this patch. Courses and progress remain browser-local, so the Guardian Workspace truthfully reports that progress summaries are unavailable.
 - The repository build and TypeScript validation pass, and the current production dependency audit reports no vulnerabilities. These checks do not verify production configuration, deployed rules, provider limits, or live data.
+
+## Visual learning capability
+
+- The current PDF extraction path reads page text; it does not extract embedded figure assets. Existing `SourceReference` records retain document/page/section context, but original textbook figures cannot currently be reused as standalone images by the reader.
+- The Key Concepts reader now derives a small set of deterministic, accessible SVG diagrams from lesson/source text: cloud-service component overview (without inferred component links), source-grounded IaaS/PaaS/SaaS comparison, explicitly numbered procedures, and formulas explicitly written as `f(x) = …` or `y = …`.
+- Diagram specs are generated locally from existing lesson data and cached in a bounded in-memory map. No schema, external image service, API credential, or database record was added. Unsupported content falls back to the existing lesson text.
+- No image-generation provider is configured, so MicroDo-generated illustrations are intentionally skipped rather than blocking lessons. No user-selectable depth/explanation-style preference exists in the current profile model; visuals are selected only when the content provides sufficient evidence.
+- This implementation does not regenerate existing lessons or alter quiz, mastery, or progress records. Validate these visual choices against representative source documents before treating them as pedagogically authoritative.

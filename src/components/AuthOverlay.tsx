@@ -264,7 +264,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     setIsGoogleSubmitting(true);
     try {
       const googleUser = await signInWithGooglePopup(
-        mode === 'register' ? registrationRole : 'scholar'
+        registrationRole
       );
       saveStoredUser(googleUser);
       setSuccessNotice(`Signed in with Google as ${googleUser.fullName}!`);
@@ -507,6 +507,25 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           </AnimatePresence>
 
           {/* Quick Google Sign In */}
+          {mode === 'login' && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label htmlFor="google-new-account-role" className="mb-1 block text-xs font-semibold text-slate-700">
+                Account type for a new Google account
+              </label>
+              <select
+                id="google-new-account-role"
+                value={registrationRole}
+                onChange={(event) => setRegistrationRole(event.target.value as 'scholar' | 'guardian')}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="scholar">Learner</option>
+                <option value="guardian">Parent / Guardian</option>
+              </select>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Existing Google accounts keep their current role. This choice is used only if you are creating a new account.
+              </p>
+            </div>
+          )}
           <button
             type="button"
             disabled={isGoogleSubmitting || isSubmitting}

@@ -8,6 +8,7 @@ import {
   Target,
   ChevronDown,
   User,
+  ShieldCheck,
   LogOut,
   Sparkles,
 } from 'lucide-react';
@@ -168,6 +169,30 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Primary Action: Upload Material */}
+        {onOpenGuardian && (
+          <button
+            type="button"
+            onClick={onOpenGuardian}
+            aria-label="Open Parent / Guardian workspace"
+            title="Open Parent / Guardian workspace"
+            className="h-10 rounded-[10px] border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-indigo-700 sm:px-3"
+          >
+            <ShieldCheck className="inline h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Guardian</span>
+          </button>
+        )}
+        {onOpenSuperuser && (
+          <button
+            type="button"
+            onClick={onOpenSuperuser}
+            aria-label="Open Owner Backend"
+            title="Open Owner Backend"
+            className="h-10 rounded-[10px] border border-amber-200 bg-amber-50 px-2.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 sm:px-3"
+          >
+            <Crown className="inline h-4 w-4 sm:mr-1.5" />
+            <span className="hidden sm:inline">Owner</span>
+          </button>
+        )}
         <button
           onClick={onOpenUploadModal}
           className="h-10 px-3.5 sm:px-4 rounded-[10px] bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-xs active:scale-[0.98]"

@@ -228,10 +228,23 @@ export default defineConfig(() => {
       chunkSizeWarningLimit: 500,
       rollupOptions: {
         output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              return id.toString().split('node_modules/')[1].split('/')[0].toString();
-            }
+          codeSplitting: {
+            groups: [
+              {
+                debugName: 'dependency-vendor-chunks',
+                name: (id) => {
+                  const packageBoundary = id.lastIndexOf('node_modules/');
+                  if (packageBoundary === -1) return null;
+                  const packagePath = id.slice(packageBoundary + 'node_modules/'.length);
+                  const [scopeOrName, scopedName] = packagePath.split('/');
+                  return scopeOrName.startsWith('@')
+                    ? `vendor-${scopeOrName.slice(1)}-${scopedName}`
+                    : `vendor-${scopeOrName}`;
+                },
+                test: /[\\/]node_modules[\\/]/,
+                maxSize: 450 * 1024,
+              },
+            ],
           },
         },
       },
