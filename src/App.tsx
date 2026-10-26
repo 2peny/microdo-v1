@@ -869,7 +869,6 @@ export default function App() {
                   isRailMode={false}
                   completedArtifactIds={completedArtifactIds}
                   onOpenUploadModal={() => setIsUploadModalOpen(true)}
-                  onOpenFaq={() => setIsFaqOpen(true)}
                   hasAnyModules={currentCourse.modules.length > 0}
                   onClearSearch={() => setSearchQuery('')}
                   onRequestUnload={(mod) => setModuleToUnload(mod)}

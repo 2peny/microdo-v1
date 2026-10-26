@@ -23,7 +23,6 @@ interface LeftCardsColumnProps {
   isRailMode: boolean;
   completedArtifactIds?: string[];
   onOpenUploadModal?: () => void;
-  onOpenFaq?: () => void;
   hasAnyModules?: boolean;
   onClearSearch?: () => void;
   onRequestUnload?: (module: StudyModuleNode) => void;
@@ -38,7 +37,6 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
   isRailMode,
   completedArtifactIds = [],
   onOpenUploadModal,
-  onOpenFaq,
   hasAnyModules = true,
   onClearSearch,
   onRequestUnload,
@@ -201,7 +199,6 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
     return (
       <EmptyStateView
         onOpenUploadModal={onOpenUploadModal || (() => {})}
-        onOpenFaq={onOpenFaq || (() => {})}
       />
     );
   }

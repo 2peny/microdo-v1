@@ -1,91 +1,75 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import {
-  Upload,
-  Sparkles,
-  Compass,
-} from 'lucide-react';
-import learnerNoticeBoardImg from '../assets/images/learner_notice_board_1790840138726.jpg';
+import React from 'react';
 
 interface EmptyStateViewProps {
   onOpenUploadModal: () => void;
-  onOpenFaq?: () => void;
 }
+
+const LearningPathIllustration = () => (
+  <svg
+    viewBox="0 0 440 300"
+    role="img"
+    aria-labelledby="learning-path-title"
+    className="h-auto w-full max-w-md"
+  >
+    <title id="learning-path-title">Course materials becoming a learning path</title>
+    <path d="M24 260H416" stroke="#CBD5E1" strokeWidth="2" />
+
+    <rect x="40" y="64" width="148" height="168" rx="12" fill="#E2E8F0" />
+    <rect x="50" y="54" width="148" height="168" rx="12" fill="#FFFFFF" stroke="#CBD5E1" strokeWidth="2" />
+    <path d="M124 67v139" stroke="#CBD5E1" strokeWidth="2" />
+    <path d="M67 84h39M67 97h39M67 110h28M141 84h39M141 97h32M141 110h39" stroke="#94A3B8" strokeWidth="4" strokeLinecap="round" />
+    <path d="M67 139h39M67 152h39M141 139h39M141 152h31" stroke="#CBD5E1" strokeWidth="4" strokeLinecap="round" />
+    <rect x="67" y="174" width="112" height="8" rx="4" fill="#E0E7FF" />
+
+    <path d="M203 140h37m0 0v-46m0 46v46m0-92h22m-22 92h22" fill="none" stroke="#94A3B8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    <rect x="264" y="71" width="132" height="46" rx="9" fill="#EEF2FF" stroke="#C7D2FE" strokeWidth="2" />
+    <circle cx="281" cy="94" r="6" fill="#4F46E5" />
+    <path d="M296 89h83M296 99h57" stroke="#6366F1" strokeWidth="3" strokeLinecap="round" />
+    <rect x="264" y="127" width="132" height="46" rx="9" fill="#F8FAFC" stroke="#CBD5E1" strokeWidth="2" />
+    <circle cx="281" cy="150" r="6" fill="#0F766E" />
+    <path d="M296 145h71M296 155h52" stroke="#94A3B8" strokeWidth="3" strokeLinecap="round" />
+    <rect x="264" y="183" width="132" height="46" rx="9" fill="#F8FAFC" stroke="#CBD5E1" strokeWidth="2" />
+    <circle cx="281" cy="206" r="6" fill="#B45309" />
+    <path d="M296 201h78M296 211h48" stroke="#94A3B8" strokeWidth="3" strokeLinecap="round" />
+
+    <text x="50" y="42" fill="#475569" fontSize="12" fontWeight="600" letterSpacing="1.2">YOUR MATERIALS</text>
+    <text x="264" y="51" fill="#475569" fontSize="12" fontWeight="600" letterSpacing="1.2">A CLEAR STUDY PATH</text>
+  </svg>
+);
 
 export const EmptyStateView: React.FC<EmptyStateViewProps> = ({
   onOpenUploadModal,
-  onOpenFaq,
-}) => {
-  const [imgSrc, setImgSrc] = useState<string>(learnerNoticeBoardImg || '/learner_notice_board.jpg');
-  const [imgError, setImgError] = useState(false);
-
-  const handleImageError = () => {
-    if (imgSrc !== '/learner_notice_board.jpg') {
-      setImgSrc('/learner_notice_board.jpg');
-    } else {
-      setImgError(true);
-    }
-  };
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="w-full max-w-4xl mx-auto flex flex-col items-center text-center py-2 px-4"
-    >
-      {/* Main Title & Subtitle */}
-      <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight font-sans max-w-2xl">
-        Your study workspace is clean & ready
-      </h2>
-      <p className="text-sm text-slate-600 mt-2.5 max-w-xl leading-relaxed">
-        Upload your syllabus, textbook chapter, or lecture notes. MicroDo structures your course materials into an interactive 3-tier study flow.
-      </p>
-
-      {/* Primary Action Buttons */}
-      <div className="flex flex-wrap items-center justify-center gap-3.5 mt-4 mb-4">
-        <button
-          type="button"
-          onClick={onOpenUploadModal}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs font-sans transition-all cursor-pointer shadow-md hover:shadow-lg hover:-translate-y-0.5"
-        >
-          <Upload className="w-4 h-4" />
-          <span>Upload Module or Book</span>
-        </button>
-
-        {onOpenFaq && (
+}) => (
+  <section className="mx-auto w-full max-w-5xl px-5 py-8 sm:py-14">
+    <div className="grid items-center gap-7 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8 md:grid-cols-[minmax(0,1fr)_minmax(300px,0.95fr)] md:gap-10 md:p-10">
+      <div className="max-w-lg">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-indigo-700">Your study workspace</p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          Turn your course materials into a learning path
+        </h2>
+        <p className="mt-4 text-sm leading-6 text-slate-600">
+          Add a syllabus, textbook chapter, or lecture notes. MicroDo will organize the material into topics and study activities.
+        </p>
+        <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
           <button
             type="button"
-            onClick={onOpenFaq}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-indigo-600 hover:text-indigo-700 font-medium text-xs font-sans transition-all cursor-pointer border border-indigo-200 shadow-xs hover:shadow-sm"
+            onClick={onOpenUploadModal}
+            className="rounded-lg bg-indigo-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-indigo-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
-            <Sparkles className="w-4 h-4 text-indigo-500" />
-            <span>How MicroDo Works</span>
+            Add course materials
           </button>
-        )}
+        </div>
       </div>
 
-      {/* Learner Bulletin Board Illustration */}
-      <div className="w-full max-w-2xl flex flex-col items-center">
-        <div className="w-full relative rounded-2xl overflow-hidden border border-slate-200/80 bg-linear-to-b from-white to-slate-50 shadow-sm p-3 sm:p-4 flex items-center justify-center min-h-[160px]">
-          {!imgError ? (
-            <img
-              src={imgSrc}
-              alt="Learner thoughtfully looking at a notice board deciding what to study"
-              referrerPolicy="no-referrer"
-              onError={handleImageError}
-              className="w-full max-h-[220px] object-contain rounded-xl"
-            />
-          ) : (
-            <div className="w-full py-12 flex flex-col items-center justify-center text-slate-400">
-              <Compass className="w-10 h-10 text-indigo-400 mb-2 animate-pulse" />
-              <p className="text-xs font-mono text-slate-500">Notice Board · Choose a study path above</p>
-            </div>
-          )}
-        </div>
-        <p className="text-xs text-slate-400 font-mono mt-3.5">
-          Select an action above to populate your study roadmap and start learning.
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-[#f7f8fc] px-3 py-5 sm:px-5 sm:py-6">
+        <p className="mb-1 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+          From your notes to a study plan
+        </p>
+        <LearningPathIllustration />
+        <p className="mt-1 text-center text-xs text-slate-500">
+          Materials <span className="mx-1.5 text-slate-300">/</span> Topics <span className="mx-1.5 text-slate-300">/</span> Study
         </p>
       </div>
-    </motion.div>
-  );
-};
+    </div>
+  </section>
+);
