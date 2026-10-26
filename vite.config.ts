@@ -180,6 +180,45 @@ ${rawText.slice(0, 40000)}
           });
           return;
         }
+
+        // ==========================================
+        // Superuser / Owner Backend Admin API Routes
+        // ==========================================
+        if (url === '/api/admin/metrics' && req.method === 'GET') {
+          const mem = process.memoryUsage();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              status: 'operational',
+              serverUptimeSecs: Math.floor(process.uptime()),
+              memoryRssMb: Math.round(mem.rss / 1024 / 1024),
+              heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+              geminiModel: 'gemini-2.5-flash',
+              environment: process.env.NODE_ENV || 'development',
+              timestamp: new Date().toISOString(),
+            })
+          );
+          return;
+        }
+
+        if (url === '/api/admin/log-event' && req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk) => {
+            body += chunk;
+          });
+          req.on('end', () => {
+            try {
+              const payload = JSON.parse(body || '{}');
+              console.log(`[Superuser Audit Event] ${payload.action || 'EVENT'}: ${payload.details || ''}`);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, loggedAt: new Date().toISOString() }));
+            } catch (err: any) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+          return;
+        }
         next();
       });
     },

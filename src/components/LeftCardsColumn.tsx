@@ -48,6 +48,36 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
   const [activeRangeIndex, setActiveRangeIndex] = useState<number>(0);
   const [jumpInput, setJumpInput] = useState('');
 
+  // Range pagination if many chapters (e.g. 50 to 300 chapters)
+  // Must be called at top-level before any conditional returns to obey React hook rules
+  const isLargeBook = modules.length > CHAPTERS_PER_PAGE;
+  const totalPages = Math.ceil(modules.length / CHAPTERS_PER_PAGE);
+
+  const displayedModules = useMemo(() => {
+    if (!isLargeBook || activeRangeIndex < 0) return modules;
+    const start = activeRangeIndex * CHAPTERS_PER_PAGE;
+    return modules.slice(start, start + CHAPTERS_PER_PAGE);
+  }, [modules, isLargeBook, activeRangeIndex]);
+
+  const handleJumpToChapter = (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = parseInt(jumpInput, 10);
+    if (!isNaN(num) && num >= 1 && num <= modules.length) {
+      // Find matching module by chapter number or index
+      const target =
+        modules.find(
+          (m) =>
+            m.prefix.includes(`Chapter ${num}`) ||
+            m.prefix.includes(`Chapter ${String(num).padStart(2, '0')}`) ||
+            m.courseCode.includes(`Ch. ${num}`)
+        ) || modules[num - 1];
+
+      if (target) {
+        onSelectModule(target.id);
+      }
+    }
+  };
+
   // 1. RAIL MODE (When a module is selected): Narrow vertical left sidebar
   if (isRailMode) {
     const filteredRailModules = modules.filter((m) => {
@@ -201,35 +231,6 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
       </div>
     );
   }
-
-  // Range pagination if many chapters (e.g. 50 to 300 chapters)
-  const isLargeBook = modules.length > CHAPTERS_PER_PAGE;
-  const totalPages = Math.ceil(modules.length / CHAPTERS_PER_PAGE);
-
-  const displayedModules = useMemo(() => {
-    if (!isLargeBook || activeRangeIndex < 0) return modules;
-    const start = activeRangeIndex * CHAPTERS_PER_PAGE;
-    return modules.slice(start, start + CHAPTERS_PER_PAGE);
-  }, [modules, isLargeBook, activeRangeIndex]);
-
-  const handleJumpToChapter = (e: React.FormEvent) => {
-    e.preventDefault();
-    const num = parseInt(jumpInput, 10);
-    if (!isNaN(num) && num >= 1 && num <= modules.length) {
-      // Find matching module by chapter number or index
-      const target =
-        modules.find(
-          (m) =>
-            m.prefix.includes(`Chapter ${num}`) ||
-            m.prefix.includes(`Chapter ${String(num).padStart(2, '0')}`) ||
-            m.courseCode.includes(`Ch. ${num}`)
-        ) || modules[num - 1];
-
-      if (target) {
-        onSelectModule(target.id);
-      }
-    }
-  };
 
   return (
     <motion.div

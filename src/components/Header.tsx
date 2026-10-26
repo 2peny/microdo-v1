@@ -1,5 +1,15 @@
-import React from 'react';
-import { Upload, RotateCcw, Layers, Flame } from 'lucide-react';
+import {
+  Upload,
+  RotateCcw,
+  Layers,
+  Flame,
+  ShieldCheck,
+  Crown,
+  LayoutDashboard,
+  Target,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import { ProgressOverview } from './ProgressOverview';
 import { StudyModuleNode, ScholarUser } from '../types';
 
@@ -14,6 +24,12 @@ interface HeaderProps {
   onResetFlow: () => void;
   currentUser?: ScholarUser | null;
   onOpenAuth?: (mode?: 'login' | 'register') => void;
+  onOpenSuperuser?: () => void;
+  currentView?: 'dashboard' | 'workspace';
+  onViewChange?: (view: 'dashboard' | 'workspace') => void;
+  onOpenStudyGoals?: () => void;
+  isOffline?: boolean;
+  offlinePendingCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,6 +43,12 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectModule,
   onOpenUploadModal,
   onResetFlow,
+  onOpenSuperuser,
+  currentView = 'workspace',
+  onViewChange,
+  onOpenStudyGoals,
+  isOffline = false,
+  offlinePendingCount = 0,
 }) => {
   // Archetype Bonus Logic
   const getArchetypeBonus = (archetype?: string) => {
@@ -48,8 +70,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 flex items-center justify-between shadow-xs gap-2 sm:gap-3">
-      {/* Left: Wordmark / Brand */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Left: Wordmark / Brand & View Switcher */}
+      <div className="flex items-center gap-2 sm:gap-4">
         <button
           onClick={onResetFlow}
           className="text-base font-bold tracking-tight text-slate-900 hover:text-indigo-600 transition-colors flex items-center gap-2 cursor-pointer"
@@ -60,17 +82,69 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <span className="font-mono tracking-tight font-extrabold text-slate-900">MicroDo</span>
         </button>
+
+        {/* View Switcher: Dashboard vs Workspace */}
+        {onViewChange && (
+          <div className="flex items-center p-0.5 rounded-lg bg-slate-100 border border-slate-200 text-xs">
+            <button
+              onClick={() => onViewChange('dashboard')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer font-medium ${
+                currentView === 'dashboard'
+                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Learner Dashboard (Adaptive Next Actions, Mastery vs Progress)"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </button>
+            <button
+              onClick={() => onViewChange('workspace')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-all cursor-pointer font-medium ${
+                currentView === 'workspace'
+                  ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Study Workspace (Rails, Roadmap, & Study Cards)"
+            >
+              <Layers className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline">Study Rails</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Centre: Dynamic current course name */}
-      <div className="hidden lg:flex items-center justify-center text-center">
-        <h1 className="text-xs font-semibold text-slate-700 tracking-tight font-sans truncate max-w-xs xl:max-w-sm">
+      <div className="hidden xl:flex items-center justify-center text-center">
+        <h1 className="text-xs font-semibold text-slate-700 tracking-tight font-sans truncate max-w-xs">
           {courseName}
         </h1>
       </div>
 
       {/* Right: Progress Overview & Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* Offline / Online Network Sync Status */}
+        <div
+          className={`hidden md:flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-mono border ${
+            isOffline
+              ? 'bg-amber-50 text-amber-800 border-amber-200'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          }`}
+          title={isOffline ? `${offlinePendingCount} actions queued for sync` : 'Connected & synced'}
+        >
+          {isOffline ? (
+            <>
+              <WifiOff className="w-3 h-3 text-amber-600" />
+              <span>Offline {offlinePendingCount > 0 ? `(${offlinePendingCount})` : ''}</span>
+            </>
+          ) : (
+            <>
+              <Wifi className="w-3 h-3 text-emerald-600" />
+              <span>Synced</span>
+            </>
+          )}
+        </div>
+
         <ProgressOverview
           completedCount={completedArtifactsCount}
           totalCount={totalArtifactsCount}
@@ -92,6 +166,18 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </div>
+        )}
+
+        {/* Study Goals Trigger */}
+        {onOpenStudyGoals && (
+          <button
+            onClick={onOpenStudyGoals}
+            className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200 transition-colors cursor-pointer shadow-xs"
+            title="Study Goals & Spaced Repetition Schedule"
+            aria-label="Study Goals"
+          >
+            <Target className="w-4 h-4 text-purple-600" />
+          </button>
         )}
 
         <div className="h-4 w-px bg-slate-200 hidden sm:block mx-0.5" />
@@ -125,6 +211,23 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline font-semibold truncate max-w-[100px]">
               {currentUser?.fullName.split(' ')[0] || 'Sign In'}
             </span>
+          </button>
+        )}
+
+        {/* Superuser / Owner Backend Control Console Button */}
+        {onOpenSuperuser && (
+          <button
+            onClick={onOpenSuperuser}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all cursor-pointer shadow-xs border ${
+              currentUser?.role === 'super_admin' || currentUser?.role === 'admin'
+                ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 border-amber-300'
+                : 'bg-slate-900 hover:bg-slate-800 text-amber-300 border-slate-700'
+            }`}
+            title="Owner & Superuser Control Center (Site Telemetry, User Directory, Permissions)"
+          >
+            <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Owner Backend</span>
+            <span className="sm:hidden">Owner</span>
           </button>
         )}
       </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, Trash2, Layers, UserCheck } from 'lucide-react';
+import { HelpCircle, Trash2, Layers, UserCheck, ShieldCheck, Crown } from 'lucide-react';
 import { ScholarUser } from '../types';
 import { LegalModal, LegalTab } from './LegalModal';
 
@@ -9,6 +9,7 @@ interface FooterBarProps {
   onClearToEmptyState?: () => void;
   hasModules?: boolean;
   onOpenAuth?: (mode?: 'login' | 'register') => void;
+  onOpenSuperuser?: () => void;
 }
 
 export const FooterBar: React.FC<FooterBarProps> = ({
@@ -17,6 +18,7 @@ export const FooterBar: React.FC<FooterBarProps> = ({
   onClearToEmptyState,
   hasModules = true,
   onOpenAuth,
+  onOpenSuperuser,
 }) => {
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [legalModalTab, setLegalModalTab] = useState<LegalTab>('privacy');
@@ -112,6 +114,18 @@ export const FooterBar: React.FC<FooterBarProps> = ({
         <span className="text-slate-400 text-[11px] hidden md:inline">
           Station Clearance Active
         </span>
+
+        {onOpenSuperuser && (
+          <button
+            type="button"
+            onClick={onOpenSuperuser}
+            className="flex items-center gap-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100/80 px-2.5 py-1 rounded-lg border border-amber-200 hover:border-amber-300 text-[11px] font-mono font-semibold transition-all cursor-pointer shadow-2xs"
+            title="Open Owner & Superuser Control Center"
+          >
+            <Crown className="w-3 h-3 text-amber-600" />
+            <span className="hidden sm:inline">Owner Backend</span>
+          </button>
+        )}
 
         {onOpenAuth ? (
           <button

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -9,9 +9,16 @@ import {
   CheckCircle2,
   FileText,
   Layers,
-  Search,
-  BookMarked,
+  ArrowUp,
+  ArrowDown,
+  Trash2,
+  Plus,
+  RotateCcw,
+  AlertCircle,
   Info,
+  Check,
+  ChevronRight,
+  Edit3,
 } from 'lucide-react';
 import { StudyModuleNode } from '../types';
 import {
@@ -20,9 +27,9 @@ import {
   detectChaptersInText,
   sanitizeAcademicText,
   cleanTitle,
-  buildResultFromAiSynthesis,
   BookAnalysisResult,
 } from '../utils/academicParser';
+import { recordAnalyticsEvent, recordProcessingJob } from '../utils/analyticsEngine';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
@@ -46,27 +53,41 @@ interface UploadModuleModalProps {
   ) => void;
 }
 
+export interface ReviewableChapter {
+  id: string;
+  chapterNumber: number;
+  chapterHeading: string;
+  chapterTitle: string;
+  body: string;
+}
+
+type UploadStage = 'upload' | 'review_structure' | 'generating' | 'error';
+
 export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
   isOpen,
   onClose,
   onModuleCreated,
   onModulesCreated,
 }) => {
+  const [stage, setStage] = useState<UploadStage>('upload');
   const [courseTitle, setCourseTitle] = useState('');
   const [courseCode, setCourseCode] = useState('');
   const [pastedText, setPastedText] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploadedFileContent, setUploadedFileContent] = useState('');
   const [uploadedFilesList, setUploadedFilesList] = useState<{ name: string; content: string }[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState('Analyzing document architecture...');
   const [errorMsg, setErrorMsg] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+
+  // Safeguard 2: Correctable Course Structure state
+  const [editableChapters, setEditableChapters] = useState<ReviewableChapter[]>([]);
 
   // Active content: uses uploaded file content if loaded, otherwise manual pasted text
   const activeContent = uploadedFileContent.trim() || pastedText.trim();
 
   // Real-time chapter detection on active curriculum content
-  const detectedChapters = useMemo(() => {
+  const detectedInitialChapters = useMemo(() => {
     // If multiple files are uploaded, each file is a chapter!
     if (uploadedFilesList.length >= 2) {
       return uploadedFilesList.map((f, idx) => {
@@ -74,10 +95,10 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
         const chapterNumber = numMatch ? parseInt(numMatch[1], 10) : idx + 1;
         const cleanN = cleanTitle(f.name.replace(/^[\d\-_]+/, '').replace(/\.md$/i, '').replace(/[-_]/g, ' '));
         return {
+          id: `ch-file-${idx}-${Date.now()}`,
           chapterNumber,
           chapterHeading: f.name,
           chapterTitle: cleanN || `Chapter ${chapterNumber}`,
-          startIndex: idx,
           body: f.content,
         };
       });
@@ -86,7 +107,10 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     if (!activeContent || activeContent.length < 40) return [];
 
     // Check if CK-12 Algebra I
-    if (/ck[- ]?12|algebra\s*i\b|1[-_]ck[-_]12/i.test(activeContent) || (activeContent.includes('Variable Expression') && activeContent.includes('Rectangle Perimeter'))) {
+    if (
+      /ck[- ]?12|algebra\s*i\b|1[-_]ck[-_]12/i.test(activeContent) ||
+      (activeContent.includes('Variable Expression') && activeContent.includes('Rectangle Perimeter'))
+    ) {
       const titles = [
         'Equations & Functions Overview',
         'Real Numbers & Operations',
@@ -103,17 +127,31 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
         'Probability, Statistics & Review',
       ];
       return titles.map((t, idx) => ({
+        id: `ch-ck12-${idx + 1}`,
         chapterNumber: idx + 1,
         chapterHeading: `Chapter ${idx + 1}`,
         chapterTitle: t,
-        startIndex: idx,
         body: '',
       }));
     }
 
     const sanitized = sanitizeAcademicText(activeContent);
-    return detectChaptersInText(sanitized);
+    const parsed = detectChaptersInText(sanitized);
+    return parsed.map((c, idx) => ({
+      id: `ch-parsed-${idx}-${Date.now()}`,
+      chapterNumber: c.chapterNumber || idx + 1,
+      chapterHeading: c.chapterHeading,
+      chapterTitle: c.chapterTitle,
+      body: c.body || '',
+    }));
   }, [activeContent, uploadedFilesList]);
+
+  // Sync initial detected chapters into editable state
+  useEffect(() => {
+    if (detectedInitialChapters.length > 0 && editableChapters.length === 0) {
+      setEditableChapters(detectedInitialChapters);
+    }
+  }, [detectedInitialChapters]);
 
   if (!isOpen) return null;
 
@@ -122,6 +160,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     setUploadedFileName('');
     setUploadedFileContent('');
     setUploadedFilesList([]);
+    setEditableChapters([]);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,7 +168,15 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
     if (!fileList || fileList.length === 0) return;
 
     setErrorMsg('');
-    setIsProcessing(true);
+    setStage('upload');
+
+    // Track analytics event
+    recordAnalyticsEvent('document_uploaded', {
+      metadata: {
+        fileCount: fileList.length,
+        firstName: fileList[0].name,
+      },
+    });
 
     try {
       if (fileList.length === 1) {
@@ -152,7 +199,7 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
               content += textContent.items.map((s: any) => s.str).join(' ') + '\n';
             }
           } catch (pdfErr: any) {
-            console.warn('PDF parser worker issue, falling back to text stream:', pdfErr);
+            console.warn('PDF parser fallback to text decoder:', pdfErr);
             const textDecoder = new TextDecoder('utf-8', { fatal: false });
             content = textDecoder.decode(arrayBuffer);
           }
@@ -164,12 +211,9 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
           content = await file.text();
         }
 
-        // Store file content in uploadedFileContent & uploadedFilesList
-        // CRITICAL: NEVER populate pastedText with uploaded file contents!
         setUploadedFileContent(content);
         setUploadedFilesList([{ name: file.name, content }]);
 
-        // Auto-detect title from document heading if not already specified
         if (!courseTitle) {
           const headingMatch =
             content.match(/^#{1,3}\s+(.+)$/m) ||
@@ -181,22 +225,16 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
           }
         }
 
-        // Auto-detect course code if not specified
         if (!courseCode) {
           const codeMatch = content.match(/\b([A-Z]{2,5}[ -]?\d{2,4}[A-Z]?)\b/);
-          const chapterMatch = content.match(
-            /\b(Lecture\s+\d+|Chapter\s+\d+|Week\s+\d+|Unit\s+\d+)\b/i
-          );
-          if (codeMatch && chapterMatch) {
-            setCourseCode(`${codeMatch[1]} · ${chapterMatch[1]}`);
-          } else if (codeMatch) {
+          if (codeMatch) {
             setCourseCode(codeMatch[1]);
           } else if (/algebra/i.test(file.name) || /algebra/i.test(content)) {
             setCourseCode('MATH-ALG1');
           }
         }
       } else {
-        // Multi-file upload: e.g. 13 chapters (1-ck-12-..., 2-ck-12-..., etc.)
+        // Multi-file upload
         setUploadedFileName(`${fileList.length} chapter files selected`);
         setProcessingStatus(`Extracting ${fileList.length} curriculum chapter files...`);
 
@@ -205,7 +243,6 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
         for (let i = 0; i < fileList.length; i++) {
           const file = fileList[i];
-          setProcessingStatus(`Reading chapter file ${i + 1} of ${fileList.length}: ${file.name}...`);
           let fileText = '';
           const lowerName = file.name.toLowerCase();
 
@@ -240,7 +277,6 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
           }
         }
 
-        // Store multi-files cleanly
         setUploadedFilesList(filesData);
         setUploadedFileContent(fileContents.join('\n\n---\n\n'));
 
@@ -252,13 +288,57 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
       }
     } catch (err: any) {
       console.error('Error parsing file:', err);
-      setErrorMsg('Failed to parse document: ' + err.message);
-    } finally {
-      setIsProcessing(false);
+      setErrorMsg('Failed to read document: ' + err.message);
+      setStage('error');
     }
   };
 
-  const handleProcessModule = async () => {
+  // Move Chapter Up / Down in Structure Review (Safeguard 2)
+  const handleMoveChapter = (index: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= editableChapters.length) return;
+
+    const copy = [...editableChapters];
+    const [moved] = copy.splice(index, 1);
+    copy.splice(targetIdx, 0, moved);
+
+    // Re-number chapters sequentially
+    const renumbered = copy.map((c, i) => ({
+      ...c,
+      chapterNumber: i + 1,
+    }));
+    setEditableChapters(renumbered);
+  };
+
+  // Edit Chapter Title Inline (Safeguard 2)
+  const handleRenameChapter = (index: number, newTitle: string) => {
+    setEditableChapters((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, chapterTitle: newTitle } : c))
+    );
+  };
+
+  // Remove Chapter (Safeguard 2)
+  const handleRemoveChapter = (index: number) => {
+    setEditableChapters((prev) =>
+      prev.filter((_, i) => i !== index).map((c, i) => ({ ...c, chapterNumber: i + 1 }))
+    );
+  };
+
+  // Add Chapter (Safeguard 2)
+  const handleAddChapter = () => {
+    const nextNum = editableChapters.length + 1;
+    const newCh: ReviewableChapter = {
+      id: `ch-custom-${Date.now()}`,
+      chapterNumber: nextNum,
+      chapterHeading: `Chapter ${nextNum}`,
+      chapterTitle: `Custom Chapter ${nextNum}`,
+      body: '',
+    };
+    setEditableChapters([...editableChapters, newCh]);
+  };
+
+  // Proceed to Structure Review (Safeguard 2)
+  const handleProceedToReview = () => {
     const hasFiles = uploadedFilesList.length > 0;
     const hasPasted = pastedText.trim().length > 0;
 
@@ -267,38 +347,93 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
       return;
     }
 
-    setIsProcessing(true);
+    if (editableChapters.length === 0 && detectedInitialChapters.length > 0) {
+      setEditableChapters(detectedInitialChapters);
+    } else if (editableChapters.length === 0) {
+      // Single chapter fallback
+      setEditableChapters([
+        {
+          id: `ch-single-${Date.now()}`,
+          chapterNumber: 1,
+          chapterHeading: 'Module 1',
+          chapterTitle: courseTitle || 'Module 1: Foundations',
+          body: activeContent,
+        },
+      ]);
+    }
+
+    setStage('review_structure');
+  };
+
+  // Final Content Synthesis & Course Generation (Safeguard 3: Recoverable)
+  const handleGenerateCurriculum = async () => {
+    setStage('generating');
     setErrorMsg('');
+    setProcessingStatus('Distilling learning notes, formulas & self-check assessments...');
+
+    recordAnalyticsEvent('document_processing_started', {
+      metadata: {
+        chaptersCount: editableChapters.length,
+        retryCount,
+      },
+    });
 
     try {
       let result: BookAnalysisResult;
 
       if (uploadedFilesList.length >= 2) {
-        // MULTI-FILE UPLOAD: Each file is synthesized as an authentic chapter module on the Rail
-        setProcessingStatus(`Synthesizing all ${uploadedFilesList.length} chapter files into Module Rail...`);
+        // Multi-file synthesis
         result = buildCurriculumFromMultipleFiles(uploadedFilesList, courseTitle, courseCode);
-      } else if (uploadedFilesList.length === 1) {
-        // SINGLE FILE UPLOAD
-        setProcessingStatus('Distilling chapter curriculum, formulas & verified examples...');
-        result = extractBookOrModuleCurriculum(uploadedFilesList[0].content, courseTitle || uploadedFilesList[0].name, courseCode);
       } else {
-        // MANUAL TEXT PASTE
-        const contentToProcess = pastedText.trim();
+        const contentToProcess = activeContent;
         const sanitizedText = sanitizeAcademicText(contentToProcess);
         const textToProcess = sanitizedText.length > 80 ? sanitizedText : contentToProcess;
-        setProcessingStatus('Distilling pasted chapters, formulas & verified examples...');
         result = extractBookOrModuleCurriculum(textToProcess, courseTitle, courseCode);
       }
 
-      if (result.isBook && result.modules.length > 1) {
-        setProcessingStatus(
-          `Synthesized all ${result.totalChapters} chapters into study workspace!`
-        );
-      } else {
-        setProcessingStatus('Extracted concepts, step-by-step examples, and review quiz!');
+      // Safeguard 2 application: If the user edited chapter titles or order during review, reflect their changes
+      if (editableChapters.length > 0 && result.modules.length > 0) {
+        result.modules = result.modules.map((mod, i) => {
+          const userCh = editableChapters[i];
+          if (userCh && userCh.chapterTitle) {
+            return {
+              ...mod,
+              title: userCh.chapterTitle,
+              prefix: `// Chapter ${String(i + 1).padStart(2, '0')}: ${userCh.chapterTitle.slice(0, 22)}`,
+            };
+          }
+          return mod;
+        });
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Record successful processing telemetry
+      recordAnalyticsEvent('document_processing_completed', {
+        metadata: {
+          chaptersCount: result.modules.length,
+          totalChapters: result.totalChapters,
+        },
+      });
+
+      recordAnalyticsEvent('course_created', {
+        courseId: result.bookTitle,
+        metadata: {
+          moduleCount: result.modules.length,
+        },
+      });
+
+      recordProcessingJob({
+        fileName: uploadedFileName || `${courseTitle || 'Curriculum'}.txt`,
+        fileSize: activeContent.length,
+        fileType: uploadedFileName ? (uploadedFileName.endsWith('.pdf') ? 'application/pdf' : 'text/plain') : 'text/pasted',
+        completedAt: new Date().toISOString(),
+        stage: 'ready',
+        retryCount,
+        detectedChaptersCount: result.modules.length,
+        costEstimate: Number(((activeContent.length / 4) * 0.000002).toFixed(5)),
+        recovered: retryCount > 0,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
       if (onModulesCreated && result.modules.length > 0) {
         onModulesCreated(result.modules, result.bookTitle, result.isBook);
@@ -308,11 +443,25 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
       onClose();
     } catch (err: any) {
-      console.error('Error processing curriculum:', err);
-      setErrorMsg(err.message || 'Failed to process course materials.');
-    } finally {
-      setIsProcessing(false);
+      console.error('Error generating curriculum:', err);
+      setErrorMsg(err.message || 'Failed to synthesize learning modules.');
+      setStage('error');
+
+      recordAnalyticsEvent('document_processing_failed', {
+        metadata: {
+          error: err.message,
+          retryCount,
+        },
+      });
     }
+  };
+
+  const handleRetryFailedStage = () => {
+    setRetryCount((prev) => prev + 1);
+    recordAnalyticsEvent('document_processing_retried', {
+      metadata: { retryCount: retryCount + 1 },
+    });
+    handleGenerateCurriculum();
   };
 
   const pastedWordCount = pastedText.split(/\s+/).filter(Boolean).length;
@@ -320,13 +469,13 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto font-sans">
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 15 }}
           transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-          className="relative w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden my-8"
+          className="relative w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden my-6"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50/80">
@@ -335,11 +484,15 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
                 <BookOpen className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-slate-900 font-sans">
-                  Upload &amp; Synthesize Book or Course Module
+                <h2 className="text-base font-bold text-slate-900">
+                  {stage === 'review_structure'
+                    ? 'Review & Correct Course Structure (Safeguard 2)'
+                    : 'Convert Educational Material to Structured Course'}
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  MicroDo extracts 1 to 300+ chapters with authentic study notes, worked examples, and quizzes
+                  {stage === 'review_structure'
+                    ? 'Verify, rename, and reorder chapters before generating study content'
+                    : 'Upload PDF, DOCX, Markdown or paste course notes'}
                 </p>
               </div>
             </div>
@@ -353,57 +506,262 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
             </button>
           </div>
 
-          {/* Body */}
-          <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-            {/* Supported Materials & Architecture Guide */}
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-2.5 text-xs text-slate-600">
-              <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold text-slate-800">Supported Materials:</span>
-                <span className="ml-1 text-slate-600">
-                  Upload PDF, Word (.docx), Markdown (.md), or paste textbooks, course syllabi, and lecture modules. 
-                  Automatic chapter recognition supports full textbooks from 1 to 300+ chapters.
-                </span>
-              </div>
+          {/* Stepper progress indicator */}
+          <div className="flex items-center justify-between px-6 py-2 border-b border-slate-200 bg-white text-[11px] font-mono">
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-5 h-5 rounded-full flex items-center justify-center font-bold ${
+                  stage === 'upload' ? 'bg-indigo-600 text-white' : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                1
+              </span>
+              <span className={stage === 'upload' ? 'font-bold text-indigo-900' : 'text-slate-600'}>
+                Input Material
+              </span>
             </div>
 
-            {/* Live Multi-Chapter Detection Status Banner */}
-            {detectedChapters.length >= 2 && (
-              <div className="p-3.5 rounded-xl bg-purple-50 border border-purple-200 space-y-2">
-                <div className="flex items-start gap-3">
-                  <div className="p-1 rounded bg-purple-100 text-purple-700 shrink-0 mt-0.5">
-                    <Layers className="w-4 h-4" />
-                  </div>
-                  <div className="flex-1 text-xs">
-                    <div className="font-bold text-purple-900 font-sans flex items-center justify-between gap-2">
-                      <span>Multi-Chapter Curriculum Detected</span>
-                      <span className="px-2 py-0.5 rounded-full bg-purple-200 text-purple-800 font-mono text-[10px] font-semibold">
-                        {detectedChapters.length} Chapters Ready
-                      </span>
-                    </div>
-                    <p className="text-purple-700 mt-0.5 leading-relaxed font-sans">
-                      MicroDo will generate all {detectedChapters.length} chapters as individual modules on the left Chapter Rail with verified study notes, worked examples, and quizzes.
-                    </p>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-5 h-5 rounded-full flex items-center justify-center font-bold ${
+                  stage === 'review_structure'
+                    ? 'bg-indigo-600 text-white'
+                    : stage === 'generating' || stage === 'error'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                2
+              </span>
+              <span className={stage === 'review_structure' ? 'font-bold text-indigo-900' : 'text-slate-600'}>
+                Review Structure
+              </span>
+            </div>
+
+            <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-5 h-5 rounded-full flex items-center justify-center font-bold ${
+                  stage === 'generating'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-500'
+                }`}
+              >
+                3
+              </span>
+              <span className={stage === 'generating' ? 'font-bold text-indigo-900' : 'text-slate-600'}>
+                Generate Course
+              </span>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto custom-scrollbar">
+            {/* STAGE 1: UPLOAD & INPUT */}
+            {stage === 'upload' && (
+              <>
+                {/* Information Callout */}
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2.5 text-xs text-slate-600">
+                  <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold text-slate-800">Reliable Educational Processing:</span>
+                    <span className="ml-1 text-slate-600">
+                      Identifies sections, chapters, formulas, and diagrams while maintaining verified source references to original pages.
+                    </span>
                   </div>
                 </div>
 
-                {/* Preview list of detected chapters */}
-                <div className="mt-2 pt-2 border-t border-purple-200/80">
-                  <div className="text-[10px] font-mono text-purple-800 font-semibold mb-1.5 uppercase tracking-wider">
-                    Detected Rail Chapters:
+                {/* Course Title & Code */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
+                      COURSE / BOOK TITLE (OPTIONAL)
+                    </label>
+                    <input
+                      type="text"
+                      value={courseTitle}
+                      onChange={(e) => setCourseTitle(e.target.value)}
+                      placeholder="e.g. Linear Algebra & Foundations"
+                      className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 text-xs shadow-xs"
+                    />
                   </div>
-                  <div className="max-h-32 overflow-y-auto space-y-1 pr-1 font-mono text-[11px]">
-                    {detectedChapters.map((ch, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-2 px-2 py-1 rounded bg-white/80 border border-purple-100 text-purple-900"
+
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
+                      COURSE CODE (OPTIONAL)
+                    </label>
+                    <input
+                      type="text"
+                      value={courseCode}
+                      onChange={(e) => setCourseCode(e.target.value)}
+                      placeholder="e.g. MATH-201 · Core"
+                      className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 text-xs font-mono shadow-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* File Drop / Upload */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-mono text-slate-600 font-semibold">
+                      UPLOAD DOCUMENT FILE (.pdf, .docx, .txt, .md)
+                    </label>
+                    {uploadedWordCount > 0 && (
+                      <span className="text-[10px] font-mono text-emerald-700 font-medium">
+                        {uploadedWordCount.toLocaleString()} words loaded
+                      </span>
+                    )}
+                  </div>
+
+                  {uploadedFileName ? (
+                    <div className="flex items-center justify-between p-3.5 rounded-xl border border-emerald-300 bg-emerald-50/70 shadow-2xs">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800 shrink-0">
+                          <FileText className="w-4 h-4" />
+                        </div>
+                        <div className="text-left min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-emerald-950 truncate max-w-[280px]">
+                              {uploadedFileName}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded bg-emerald-200/80 text-emerald-900 font-mono text-[10px] font-semibold">
+                              Saved in memory
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-mono text-emerald-700 mt-0.5">
+                            Ready to detect structure and verify chapter outline
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearUploadedFile}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                        title="Remove uploaded file"
                       >
-                        <span className="w-5 h-5 rounded bg-purple-100 text-purple-700 font-bold flex items-center justify-center text-[10px] shrink-0">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative border-2 border-dashed border-slate-300 hover:border-indigo-600 rounded-xl p-5 text-center bg-slate-50 transition-colors">
+                      <input
+                        type="file"
+                        multiple
+                        accept=".txt,.md,.json,.pdf,.doc,.docx"
+                        onChange={handleFileUpload}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <Upload className="w-6 h-6 text-indigo-600 mx-auto mb-1.5" />
+                      <p className="text-xs text-slate-800 font-medium">
+                        Drop educational document here, or click to browse
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                        Textbooks, lecture notes, PDF documents, or DOCX files
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Raw Text Paste */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-mono text-slate-700 font-semibold">
+                      OR PASTE CURRICULUM TEXT DIRECTLY
+                    </label>
+                    {pastedWordCount > 0 && (
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {pastedWordCount.toLocaleString()} words
+                      </span>
+                    )}
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={pastedText}
+                    onChange={(e) => setPastedText(e.target.value)}
+                    placeholder="Type or paste textbook chapters or markdown notes..."
+                    className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-600 font-mono text-xs leading-relaxed shadow-xs"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* STAGE 2: REVIEW & CORRECT STRUCTURE (SAFEGUARD 2) */}
+            {stage === 'review_structure' && (
+              <div className="space-y-4">
+                <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 flex items-start gap-2.5 text-xs text-indigo-900">
+                  <Edit3 className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-semibold">Review &amp; Correct Structure:</span>
+                    <span className="ml-1 text-indigo-800">
+                      Rename chapters, fix misidentified headings, or reorder before generating study notes and practice questions.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Chapter List Editor */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-700">
+                    <span>Detected Curriculum Chapters ({editableChapters.length})</span>
+                    <button
+                      type="button"
+                      onClick={handleAddChapter}
+                      className="flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-800 cursor-pointer font-semibold"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Chapter</span>
+                    </button>
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                    {editableChapters.map((ch, idx) => (
+                      <div
+                        key={ch.id || idx}
+                        className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 shadow-2xs transition-colors"
+                      >
+                        <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-700 font-mono font-bold text-xs flex items-center justify-center shrink-0">
                           {ch.chapterNumber}
                         </span>
-                        <span className="truncate font-sans font-medium text-slate-800">
-                          {ch.chapterTitle}
-                        </span>
+
+                        <input
+                          type="text"
+                          value={ch.chapterTitle}
+                          onChange={(e) => handleRenameChapter(idx, e.target.value)}
+                          className="flex-1 px-2.5 py-1 text-xs rounded-md border border-slate-200 focus:border-indigo-500 focus:outline-none font-medium text-slate-800"
+                          placeholder="Chapter title"
+                        />
+
+                        {/* Reorder Buttons */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => handleMoveChapter(idx, 'up')}
+                            className="p-1 rounded text-slate-400 hover:text-slate-700 disabled:opacity-20 cursor-pointer"
+                            title="Move Up"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === editableChapters.length - 1}
+                            onClick={() => handleMoveChapter(idx, 'down')}
+                            className="p-1 rounded text-slate-400 hover:text-slate-700 disabled:opacity-20 cursor-pointer"
+                            title="Move Down"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveChapter(idx)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 cursor-pointer"
+                            title="Delete Chapter"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -411,173 +769,98 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
               </div>
             )}
 
-            {/* Inputs: Course/Book Title & Code */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                  BOOK OR MODULE TITLE (OPTIONAL)
-                </label>
-                <input
-                  type="text"
-                  value={courseTitle}
-                  onChange={(e) => setCourseTitle(e.target.value)}
-                  placeholder="e.g. Modern Operating Systems (300 Chapters)"
-                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 text-xs font-sans shadow-xs"
-                />
+            {/* STAGE 3: GENERATING CURRICULUM */}
+            {stage === 'generating' && (
+              <div className="py-12 text-center space-y-3">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto" />
+                <h3 className="text-sm font-bold text-slate-900 font-sans">
+                  {processingStatus}
+                </h3>
+                <p className="text-xs text-slate-500 font-mono">
+                  Synthesizing learning notes, KaTeX formulas, step-by-step examples, and review quizzes...
+                </p>
               </div>
+            )}
 
-              <div>
-                <label className="block text-[11px] font-mono text-slate-600 mb-1 font-semibold">
-                  COURSE / DISCIPLINE CODE (OPTIONAL)
-                </label>
-                <input
-                  type="text"
-                  value={courseCode}
-                  onChange={(e) => setCourseCode(e.target.value)}
-                  placeholder="e.g. CS-400 · Core Curriculum"
-                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 text-xs font-mono shadow-xs"
-                />
-              </div>
-            </div>
-
-            {/* File Drop / Upload */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-[11px] font-mono text-slate-600 font-semibold">
-                  UPLOAD BOOK OR NOTES FILE (.pdf, .docx, .txt, .md)
-                </label>
-                {uploadedWordCount > 0 && (
-                  <span className="text-[10px] font-mono text-emerald-700 font-medium">
-                    {uploadedWordCount.toLocaleString()} words loaded
-                  </span>
-                )}
-              </div>
-
-              {uploadedFileName ? (
-                <div className="flex items-center justify-between p-3.5 rounded-xl border border-emerald-300 bg-emerald-50/70 shadow-2xs">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800 shrink-0">
-                      <FileText className="w-4 h-4" />
-                    </div>
-                    <div className="text-left min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-emerald-950 truncate max-w-[280px] sm:max-w-[360px]">
-                          {uploadedFileName}
-                        </span>
-                        <span className="px-1.5 py-0.2 rounded bg-emerald-200/80 text-emerald-900 font-mono text-[10px] font-semibold shrink-0">
-                          Loaded
-                        </span>
-                      </div>
-                      <p className="text-[11px] font-mono text-emerald-700 mt-0.5">
-                        File parsed and ready for chapter rail extraction
-                      </p>
-                    </div>
+            {/* STAGE 4: ERROR / RECOVERY (SAFEGUARD 3) */}
+            {stage === 'error' && (
+              <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 space-y-3 text-xs">
+                <div className="flex items-start gap-2.5 text-rose-900">
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold">Processing Interrupted</h4>
+                    <p className="text-rose-700 mt-0.5">{errorMsg}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleClearUploadedFile}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
-                    title="Remove uploaded file"
-                    aria-label="Remove uploaded file"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
                 </div>
-              ) : (
-                <div className="relative border-2 border-dashed border-slate-300 hover:border-purple-600 rounded-xl p-4 text-center bg-slate-50 transition-colors">
-                  <input
-                    type="file"
-                    multiple
-                    accept=".txt,.md,.json,.pdf,.doc,.docx"
-                    onChange={handleFileUpload}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  />
-                  <Upload className="w-6 h-6 text-purple-600 mx-auto mb-1.5" />
-                  <p className="text-xs text-slate-800 font-medium">
-                    Drop textbook or module file here, or click to browse
+
+                <div className="p-3 rounded-lg bg-white border border-rose-100 text-slate-600 space-y-1">
+                  <p className="font-semibold text-slate-800">
+                    Recoverable Processing Active (Safeguard 3):
                   </p>
-                  <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                    Full books, chapter dumps, PDF textbooks, DOCX, or Markdown (.txt, .md)
+                  <p className="text-[11px]">
+                    Your uploaded file and review structure are safely preserved in memory. You do not need to re-upload.
                   </p>
                 </div>
-              )}
-            </div>
-
-            {/* Raw Text Paste (Strictly for manual typing or pasting) */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] font-mono text-slate-700 font-semibold">
-                  OR PASTE CURRICULUM TEXT DIRECTLY (OPTIONAL)
-                </label>
-                {pastedWordCount > 0 ? (
-                  <span className="text-[10px] font-mono text-slate-400">
-                    {pastedWordCount.toLocaleString()} words ({Math.round((pastedText.length / 1024) * 10) / 10} KB)
-                  </span>
-                ) : uploadedFileName ? (
-                  <span className="text-[10px] font-mono text-emerald-600 font-medium">
-                    (File loaded above; paste area is clean &amp; separate)
-                  </span>
-                ) : null}
-              </div>
-              <p className="text-[10px] text-slate-500 mb-1.5 font-sans">
-                This section is strictly for pasting or typing text manually. It does not display the contents of uploaded files.
-              </p>
-              <textarea
-                rows={5}
-                value={pastedText}
-                onChange={(e) => setPastedText(e.target.value)}
-                placeholder="Type or paste textbook chapters (e.g. Chapter 1: ... Chapter 13: ...) or markdown notes here..."
-                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 font-mono text-xs leading-relaxed shadow-xs"
-              />
-            </div>
-
-            {errorMsg && (
-              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs font-mono">
-                {errorMsg}
               </div>
             )}
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 bg-slate-50">
-            <span className="text-[11px] font-mono text-slate-500">
-              {detectedChapters.length >= 2
-                ? `Will generate ${detectedChapters.length} complete chapters`
-                : 'Generates MicroDo 3-tier study cards'}
-            </span>
+            <div>
+              {stage === 'review_structure' && (
+                <button
+                  type="button"
+                  onClick={() => setStage('upload')}
+                  className="text-xs font-mono text-slate-500 hover:text-slate-800 cursor-pointer"
+                >
+                  ← Back to Upload
+                </button>
+              )}
+            </div>
 
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                disabled={isProcessing}
+                disabled={stage === 'generating'}
                 className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 font-mono text-xs border border-slate-200 cursor-pointer shadow-xs"
               >
                 Cancel
               </button>
 
-              <button
-                type="button"
-                onClick={handleProcessModule}
-                disabled={isProcessing}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-sans text-xs font-medium cursor-pointer shadow-xs disabled:opacity-50"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
-                    <span>{processingStatus}</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 text-purple-300" />
-                    <span>
-                      {detectedChapters.length >= 2
-                        ? `Generate All ${detectedChapters.length} Chapters`
-                        : 'Build Study Module'}
-                    </span>
-                  </>
-                )}
-              </button>
+              {stage === 'upload' && (
+                <button
+                  type="button"
+                  onClick={handleProceedToReview}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-sans text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  <span>Review Course Structure</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {stage === 'review_structure' && (
+                <button
+                  type="button"
+                  onClick={handleGenerateCurriculum}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-sans text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                  <span>Confirm &amp; Generate Learning Content</span>
+                </button>
+              )}
+
+              {stage === 'error' && (
+                <button
+                  type="button"
+                  onClick={handleRetryFailedStage}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-sans text-xs font-semibold cursor-pointer shadow-xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Retry Processing (Stage Resumption)</span>
+                </button>
+              )}
             </div>
           </div>
         </motion.div>

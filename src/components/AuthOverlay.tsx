@@ -778,6 +778,44 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 <span>Or continue instantly as Guest Scholar (offline/local mode)</span>
               </button>
             </div>
+
+            {/* Platform Owner / Superuser Quick Sign In */}
+            <div className="pt-1 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  const ownerUser: ScholarUser = {
+                    id: 'usr-owner-001',
+                    username: 'owner',
+                    email: 'owner@microdo.space',
+                    fullName: 'Platform Owner (Superuser)',
+                    archetype: 'deep_monk',
+                    archetypeLabel: 'Deep Focus Monk',
+                    avatarEmoji: '👑',
+                    majorOrFocus: 'Platform Architecture & Research',
+                    joinedAt: '2026-09-01',
+                    role: 'super_admin',
+                    status: 'active',
+                    permissions: {
+                      canUploadModules: true,
+                      canDeleteModules: true,
+                      canUseAiDistill: true,
+                      canManageUsers: true,
+                      canViewAnalytics: true,
+                      isSuperUser: true,
+                    },
+                  };
+                  saveStoredUser(ownerUser);
+                  onLoginSuccess(ownerUser);
+                  onClose();
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/80 py-1 px-3 rounded-lg border border-amber-200 transition-colors cursor-pointer"
+                title="Immediate Owner Access with Superuser Clearance"
+              >
+                <span>👑</span>
+                <span>Sign In as Platform Owner (Superuser)</span>
+              </button>
+            </div>
           </form>
         </div>
 

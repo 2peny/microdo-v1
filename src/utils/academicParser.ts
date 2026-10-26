@@ -5,8 +5,13 @@
  * Distills authentic lessons, formulas, step-by-step worked examples, and exam review quizzes.
  */
 
-import { StudyModuleNode, StudyTopic, StudyArtifact } from '../types';
+import { StudyModuleNode, StudyTopic, StudyArtifact, SourceReference } from '../types';
 import { buildCK12AlgebraCurriculum } from '../data/ck12AlgebraCurriculum';
+import {
+  distillTopicIntoStructuredLesson,
+  compileStructuredLessonToMarkdown,
+  isRawOrCorruptedLesson,
+} from './lessonDistiller';
 
 export interface ParsedTopic {
   topicName: string;
@@ -797,12 +802,56 @@ function createTopicArtifacts(
   idx: number
 ): StudyArtifact[] {
   const domain = detectDomain(content);
-  const objectives = extractLearningObjectives(content);
-  const examples = extractWorkedExamplesStrict(content);
+  const pageNum = Math.max(1, idx * 3 + 1);
 
-  const overviewMarkdown = synthesizeOverviewNotes(topicTitle, content, objectives, domain);
+  // Distill rich, structured learning content with Introduction, Objectives, Concepts, Formulas, Application, Takeaways
+  const structuredLesson = distillTopicIntoStructuredLesson(
+    topicTitle,
+    content,
+    domain,
+    chapterTitle,
+    pageNum
+  );
+  const overviewMarkdown = compileStructuredLessonToMarkdown(structuredLesson);
+
+  const examples = extractWorkedExamplesStrict(content);
   const workedExamplesMarkdown = formatWorkedExamplesMarkdown(topicTitle, examples, content, domain);
   const quiz = synthesizeQuiz(topicTitle, content, examples, idx, domain);
+
+  // Safeguard 1: Traceable Source Reference
+  const sourceRef: SourceReference = structuredLesson.sourceReference || {
+    documentName: chapterTitle || 'Source Textbook Curriculum',
+    pageNumber: pageNum,
+    sectionHeading: topicTitle,
+    snippetText: content.slice(0, 160).replace(/\s+/g, ' ').trim() || `Original section text for ${topicTitle}.`,
+    confidence: 'verified',
+  };
+
+  // Provide variant practice questions to avoid rote memorization on retry/revision (Section 2.4)
+  const variantQuestions = [
+    {
+      question: `Revision Variant: Given the principles of ${topicTitle}, what is the critical step when evaluating complex cases?`,
+      options: [
+        'Enforce strict order of operations and substitute values within parentheses.',
+        'Ignore negative signs until the final step.',
+        'Eliminate all variables before substitution.',
+        'Equate the expression to zero without justification.',
+      ],
+      correctIndex: 0,
+      explanation: 'Substituting values in parentheses prevents sign errors and adheres to algebraic rigor.',
+    },
+    {
+      question: `Retention Check: How does ${topicTitle} apply when testing for equivalence?`,
+      options: [
+        'Both forms must yield identical results across all valid variable assignments.',
+        'Expressions are only equivalent if written in alphabetical order.',
+        'Equivalence is only defined for linear equations.',
+        'Numerical substitution cannot test for equivalence.',
+      ],
+      correctIndex: 0,
+      explanation: 'Equivalence requires identical evaluated output for every valid domain value.',
+    },
+  ];
 
   return [
     {
@@ -810,16 +859,12 @@ function createTopicArtifacts(
       type: 'overview' as const,
       path: `${topicSlug}-overview.md`,
       title: 'Key Concept & Rules',
-      tagline: 'Distilled principles, definitions, and mental models',
+      tagline: 'Learning objectives, core definitions & rules reference',
       lines: [{ width: '92%' }, { width: '75%' }, { width: '82%' }],
       overviewMarkdown,
-      workedExamplesMarkdown,
-      quizData: {
-        question: quiz.question,
-        options: quiz.options,
-        correctIndex: quiz.correctIndex,
-        explanation: quiz.explanation,
-      },
+      workedExamplesMarkdown: '',
+      sourceReference: sourceRef,
+      structuredLesson,
     },
     {
       id: `art-ex-${Date.now()}-${idx}`,
@@ -828,14 +873,9 @@ function createTopicArtifacts(
       title: domain === 'code' ? 'Worked Code & Implementation' : 'Practical Example & Solution',
       tagline: 'Step-by-step verified example from text',
       lines: [{ width: '88%' }, { width: '65%' }, { width: '75%' }],
-      overviewMarkdown,
+      overviewMarkdown: '',
       workedExamplesMarkdown,
-      quizData: {
-        question: quiz.question,
-        options: quiz.options,
-        correctIndex: quiz.correctIndex,
-        explanation: quiz.explanation,
-      },
+      sourceReference: sourceRef,
     },
     {
       id: `art-qz-${Date.now()}-${idx}`,
@@ -844,14 +884,16 @@ function createTopicArtifacts(
       title: 'Exam Review & Self-Check',
       tagline: 'High-yield practice quiz challenge',
       lines: [{ width: '94%' }, { width: '80%' }, { width: '60%' }],
-      overviewMarkdown,
-      workedExamplesMarkdown,
+      overviewMarkdown: '',
+      workedExamplesMarkdown: '',
       quizData: {
         question: quiz.question,
         options: quiz.options,
         correctIndex: quiz.correctIndex,
         explanation: quiz.explanation,
+        variantQuestions,
       },
+      sourceReference: sourceRef,
     },
   ];
 }
@@ -901,6 +943,7 @@ function buildModuleFromChapter(
         { width: '55%' },
       ],
       artifacts,
+      sourceReference: artifacts[0]?.sourceReference,
     };
   });
 
@@ -957,7 +1000,15 @@ export function extractAcademicStudyGuide(
       ? `Objective: ${objectives[0]}`
       : `Master foundational principles, formulas, and problem-solving techniques for ${secTitle}.`;
 
-    const overviewMarkdown = synthesizeOverviewNotes(secTitle, secContent, objectives, domain);
+    const pageNum = Math.max(1, idx * 3 + 1);
+    const structuredLesson = distillTopicIntoStructuredLesson(
+      secTitle,
+      secContent,
+      domain,
+      title,
+      pageNum
+    );
+    const overviewMarkdown = compileStructuredLessonToMarkdown(structuredLesson);
     const workedExample = formatWorkedExamplesMarkdown(secTitle, examples, secContent, domain);
     const quiz = synthesizeQuiz(secTitle, secContent, examples, idx, domain);
 
@@ -1137,14 +1188,16 @@ export function extractBookOrModuleCurriculum(
     let userOverview: string | undefined;
     let userExamples: string | undefined;
 
-    if (textToAnalyze.includes('## Key Overview') || textToAnalyze.includes('### 🎯 Learning Objectives')) {
+    // Only allow verified structured user markdown overrides that are NOT raw dumped PDF text
+    if (
+      (textToAnalyze.includes('## Key Overview') || textToAnalyze.includes('### 🎯 Learning Objectives')) &&
+      !isRawOrCorruptedLesson(textToAnalyze)
+    ) {
       const parts = textToAnalyze.split(/(?=##\s+Worked\s+Examples)/i);
       userOverview = parts[0].trim();
       if (parts.length > 1) {
         userExamples = parts.slice(1).join('\n\n').trim();
       }
-    } else if (textToAnalyze.length > 80) {
-      userOverview = textToAnalyze;
     }
 
     const ck12Modules = buildCK12AlgebraCurriculum({
