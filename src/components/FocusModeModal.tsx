@@ -17,6 +17,7 @@ import {
 import { StudyArtifact, StudyTopic, TopicMasteryRecord } from '../types';
 import { MarkdownViewer } from './MarkdownViewer';
 import { recordQuizAttempt, getTopicMastery, MASTERY_COLORS } from '../utils/masteryEngine';
+import { isRawOrCorruptedLesson } from '../utils/lessonDistiller';
 
 interface FocusModeModalProps {
   isOpen: boolean;
@@ -136,9 +137,21 @@ export const FocusModeModal: React.FC<FocusModeModalProps> = ({
 
             {/* Content rendering */}
             {artifact.type === 'overview' && (
-              <div className="prose prose-invert prose-slate max-w-none text-slate-200 text-sm leading-relaxed">
-                <MarkdownViewer content={artifact.overviewMarkdown} />
-              </div>
+              isRawOrCorruptedLesson(artifact.overviewMarkdown) ? (
+                <div className="p-6 rounded-2xl bg-amber-950/40 border border-amber-600/50 text-amber-200 space-y-3 font-mono text-xs">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Structured Lesson Requires Distillation</span>
+                  </div>
+                  <p className="leading-relaxed opacity-90">
+                    This topic currently contains unformatted document text. Please exit Focus Mode and use "Regenerate Lesson" to generate verified pedagogical concepts, formulas, and takeaways.
+                  </p>
+                </div>
+              ) : (
+                <div className="prose prose-invert prose-slate max-w-none text-slate-200 text-sm leading-relaxed">
+                  <MarkdownViewer content={artifact.overviewMarkdown} />
+                </div>
+              )
             )}
 
             {artifact.type === 'examples' && (

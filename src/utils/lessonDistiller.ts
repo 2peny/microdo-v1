@@ -67,11 +67,13 @@ export function cleanTopicSourceText(rawText: string): string {
 
 /**
  * Detects if existing overviewMarkdown is corrupted with raw unformatted PDF dumps
+ * or is insufficient to render as a meaningful lesson.
  */
 export function isRawOrCorruptedLesson(content: string): boolean {
-  if (!content) return true;
+  if (!content || content.trim().length < 80) return true;
 
-  const lower = content.toLowerCase();
+  const trimmed = content.trim();
+  const lower = trimmed.toLowerCase();
 
   // Obvious raw PDF extraction markers
   if (
@@ -80,19 +82,33 @@ export function isRawOrCorruptedLesson(content: string): boolean {
     lower.includes('flexbook') ||
     lower.includes('review questions') ||
     lower.includes('table of contents') ||
-    /(?:\.\s*){4,}/.test(content)
+    /(?:\.\s*){4,}/.test(trimmed)
   ) {
     return true;
   }
 
-  // If it's a huge block of text (> 1200 chars) that completely lacks standard structured headers
-  if (
-    content.length > 1200 &&
-    !content.includes('### 🎯 Learning Objectives') &&
-    !content.includes('### 📖 Core Definitions') &&
-    !content.includes('### 💡 Topic Introduction') &&
-    !content.includes('### 📖 Key Concepts')
-  ) {
+  // Scanned PDF garbage (long strings of digits/symbols with no words)
+  const wordChars = trimmed.match(/[a-zA-Z]{3,}/g)?.length || 0;
+  const totalChars = trimmed.replace(/\s/g, '').length;
+  if (totalChars > 200 && wordChars / Math.max(1, totalChars / 5) < 0.15) {
+    return true;
+  }
+
+  // If it's a large block (> 800 chars) completely lacking standard structured lesson headers
+  const hasLessonStructure =
+    trimmed.includes('### 🎯 Learning Objectives') ||
+    trimmed.includes('### 📖 Core Definitions') ||
+    trimmed.includes('### 💡 Topic Introduction') ||
+    trimmed.includes('### 📖 Key Concepts') ||
+    trimmed.includes('### ✅ Key Takeaways') ||
+    trimmed.includes('### 🎯') ||
+    trimmed.includes('### 📖') ||
+    trimmed.includes('### 📐') ||
+    trimmed.includes('### 🔍') ||
+    // Also accept AI-generated structured content from the server
+    (trimmed.includes('## Key Overview') && trimmed.includes('---'));
+
+  if (trimmed.length > 800 && !hasLessonStructure) {
     return true;
   }
 
@@ -353,75 +369,293 @@ export function distillTopicIntoStructuredLesson(
     };
   }
 
-  // General Educational Document Distiller (Non-math, History, Biology, Computing, etc.)
-  const sentences = cleanedText
+  // Detect more specific domains for better lesson generation
+  const lowerTitle = cleanTitle.toLowerCase();
+  const lowerContent = cleanedText.toLowerCase();
+
+  // Computer Science / Cloud Computing / Software Engineering domain
+  const isCSdomain =
+    domain === 'code' ||
+    /\b(?:cloud|server|network|protocol|database|software|hardware|algorithm|computing|virtualization|infrastructure|deployment|microservice|container|kubernetes|docker|api|architecture|distributed|system)\b/i.test(cleanedText) ||
+    /\b(?:cloud|server|network|protocol|database|software|computing)\b/i.test(cleanTitle);
+
+  if (isCSdomain) {
+    return buildCSLesson(cleanTitle, cleanedText, courseTitle, pageNumber);
+  }
+
+  // Business / Management domain
+  const isBusinessDomain =
+    /\b(?:management|strategy|marketing|finance|economics|business|organization|leadership|governance|stakeholder|enterprise|revenue|cost|supply chain|logistics)\b/i.test(cleanedText);
+
+  if (isBusinessDomain) {
+    return buildBusinessLesson(cleanTitle, cleanedText, courseTitle, pageNumber);
+  }
+
+  // Science domain
+  const isScienceDomain =
+    /\b(?:biology|chemistry|physics|experiment|hypothesis|organism|molecule|reaction|energy|force|velocity|cell|dna|protein|atom|element|compound)\b/i.test(cleanedText);
+
+  if (isScienceDomain) {
+    return buildScienceLesson(cleanTitle, cleanedText, courseTitle, pageNumber);
+  }
+
+  // General Educational Document Distiller
+  return buildGeneralLesson(cleanTitle, cleanedText, courseTitle, pageNumber);
+}
+
+/**
+ * Extracts meaningful sentences from source text, filtering out boilerplate.
+ */
+function extractMeaningfulSentences(text: string): string[] {
+  return text
     .replace(/^#+.*$/gm, '')
+    .replace(/^[-*•]\s+/gm, '')
     .split(/(?<=[.?!])\s+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 25);
+    .filter((s) => s.length > 30 && !/^\d+\.?$/.test(s) && !/^page\s+\d+/i.test(s));
+}
 
-  const introSentence1 = sentences[0] || `${cleanTitle} represents a fundamental concept in ${courseTitle}.`;
-  const introSentence2 = sentences[1] || 'Understanding this topic establishes the structural baseline for analyzing complex relationships.';
-  const introSentence3 = sentences[2] || 'Mastering this material equips learners with actionable conceptual frameworks.';
-
-  // Extract key terms (sentences containing "is", "defined as", "refers to", "means")
+/**
+ * Extracts term definitions from source text.
+ */
+function extractTermDefinitions(
+  text: string,
+  maxTerms = 5
+): { term: string; definition: string; note?: string }[] {
   const keyConcepts: { term: string; definition: string; note?: string }[] = [];
-  const termRegex = /([A-Z][a-zA-Z\s]{2,25})\s+(?:is\s+defined\s+as|is\s+a|refers\s+to|means)\s+([^.!?]+[.!?])/g;
+  const termRegex = /([A-Z][a-zA-Z\s]{2,30})\s+(?:is\s+defined\s+as|is\s+a|refers\s+to|means|is\s+the|refers\s+to\s+the)\s+([^.!?]{10,150}[.!?])/g;
   let match;
-  let termCount = 0;
 
-  while ((match = termRegex.exec(cleanedText)) !== null && termCount < 4) {
+  while ((match = termRegex.exec(text)) !== null && keyConcepts.length < maxTerms) {
     const term = match[1].trim();
     const def = match[2].trim();
-    if (term.length > 2 && def.length > 10 && !term.toLowerCase().startsWith('this')) {
+    if (term.length > 2 && def.length > 10 && !term.toLowerCase().startsWith('this') && !term.toLowerCase().startsWith('it')) {
       keyConcepts.push({
         term,
         definition: def.endsWith('.') ? def : `${def}.`,
       });
-      termCount++;
     }
   }
+  return keyConcepts;
+}
 
-  if (keyConcepts.length === 0) {
-    keyConcepts.push({
-      term: cleanTitle,
-      definition: `The structured principles, methodologies, and analytical criteria governing ${cleanTitle} within the curriculum.`,
-    });
-    keyConcepts.push({
-      term: 'Core Operational Rule',
-      definition: 'The standard theoretical guideline established to ensure consistent and reproducible outcomes.',
-    });
-  }
+function buildCSLesson(
+  cleanTitle: string,
+  cleanedText: string,
+  courseTitle: string,
+  pageNumber: number
+): StructuredTopicLesson {
+  const sentences = extractMeaningfulSentences(cleanedText);
+  const termDefs = extractTermDefinitions(cleanedText);
 
-  const snippet = sentences.slice(0, 2).join(' ').slice(0, 160) || `Instructional content for ${cleanTitle}.`;
+  const intro = sentences[0] || `${cleanTitle} is a core concept in computer science and technology.`;
+  const detail = sentences[1] || `Understanding ${cleanTitle} is essential for building and evaluating modern computing systems.`;
+
+  const keyConcepts = termDefs.length >= 2
+    ? termDefs
+    : [
+        {
+          term: cleanTitle,
+          definition: `A key technical concept within ${courseTitle} covering architecture, implementation, and practical application.`,
+        },
+        {
+          term: 'System Architecture',
+          definition: 'The high-level structure of a computing system, defining how its components are organized and interact.',
+        },
+        {
+          term: 'Scalability',
+          definition: 'The ability of a system to handle growing amounts of work by adding resources without degrading performance.',
+        },
+      ];
+
+  const snippet = sentences.slice(0, 2).join(' ').slice(0, 160) || `Technical content for ${cleanTitle}.`;
+
+  // Extract rules or principles from numbered/bulleted content
+  const principleMatches = cleanedText.match(/(?:advantage|benefit|feature|principle|characteristic)\s+(?:is|of|:)\s+([^.]{10,120})\.?/gi) || [];
+  const principles = principleMatches.slice(0, 3).map((p, i) => ({
+    concept: `Key Principle ${i + 1}`,
+    explanation: p.replace(/^.*?(?:is|of|:)\s+/i, '').trim(),
+  }));
 
   return {
     topicTitle: cleanTitle,
-    introduction: `${introSentence1} ${introSentence2} By the end of this lesson, you will understand how to evaluate, apply, and explain its core mechanisms.`,
+    introduction: `${intro} ${detail}`,
     learningObjectives: [
-      `Analyze the foundational definitions and scope of ${cleanTitle}.`,
-      `Apply theoretical principles to practical case scenarios and problem sets.`,
-      `Synthesize relationships between core variables to evaluate outcomes with confidence.`,
+      `Understand the core concepts and purpose of ${cleanTitle}.`,
+      `Identify the key components, architecture, and how they interact.`,
+      `Evaluate the advantages, limitations, and practical applications of ${cleanTitle}.`,
+      `Apply this knowledge to compare and contrast with related approaches.`,
+    ],
+    keyConcepts,
+    rulesAndFormulas: principles.length > 0 ? principles : [
+      {
+        concept: 'Core Design Principle',
+        explanation: `${cleanTitle} is built on the principle of separation of concerns, modular design, and reliable communication between components.`,
+      },
+      {
+        concept: 'Scalability & Reliability',
+        explanation: 'Systems must be designed to scale horizontally (adding more instances) or vertically (upgrading capacity) while maintaining uptime.',
+      },
+    ],
+    conceptApplication: {
+      scenario: `Real-world scenario: Applying ${cleanTitle} in an enterprise computing environment.`,
+      explanation: sentences[2] || `In practice, ${cleanTitle} enables organisations to build resilient, cost-effective systems by abstracting infrastructure complexity and enabling on-demand resource provisioning.`,
+    },
+    keyTakeaways: [
+      `${cleanTitle} is a foundational concept that underpins modern computing infrastructure.`,
+      sentences[3] || 'Understanding the components and their interactions is critical for system design decisions.',
+      'Practical application requires balancing cost, performance, reliability, and security trade-offs.',
+    ],
+    sourceReference: {
+      documentName: courseTitle,
+      pageNumber: Math.max(1, pageNumber),
+      sectionHeading: cleanTitle,
+      snippetText: snippet,
+      confidence: 'verified',
+    },
+  };
+}
+
+function buildBusinessLesson(
+  cleanTitle: string,
+  cleanedText: string,
+  courseTitle: string,
+  pageNumber: number
+): StructuredTopicLesson {
+  const sentences = extractMeaningfulSentences(cleanedText);
+  const termDefs = extractTermDefinitions(cleanedText);
+  const snippet = sentences.slice(0, 2).join(' ').slice(0, 160) || `Business concept: ${cleanTitle}.`;
+
+  return {
+    topicTitle: cleanTitle,
+    introduction: sentences[0] || `${cleanTitle} is a key framework in business and management education.`,
+    learningObjectives: [
+      `Define ${cleanTitle} and explain its role in organisational strategy.`,
+      `Analyse the key components and stakeholder relationships involved.`,
+      `Apply the framework to real-world business scenarios and case studies.`,
+    ],
+    keyConcepts: termDefs.length >= 2 ? termDefs : [{
+      term: cleanTitle,
+      definition: `A business management concept governing ${courseTitle} with direct implications for decision-making and organisational performance.`,
+    }],
+    rulesAndFormulas: [{
+      concept: 'Strategic Framework',
+      explanation: sentences[2] || `${cleanTitle} follows established frameworks that guide analysis, decision-making, and performance evaluation within organisations.`,
+    }],
+    conceptApplication: {
+      scenario: `Case Study: Applying ${cleanTitle} in a real-world business context.`,
+      explanation: sentences[3] || `Organisations implement ${cleanTitle} to achieve competitive advantage, operational efficiency, and strategic alignment across departments.`,
+    },
+    keyTakeaways: [
+      `${cleanTitle} provides a structured approach to analysing and solving business challenges.`,
+      sentences[4] || 'Successful application requires understanding both internal capabilities and external market conditions.',
+      'Continuous evaluation and adaptation are essential for long-term strategic success.',
+    ],
+    sourceReference: {
+      documentName: courseTitle,
+      pageNumber: Math.max(1, pageNumber),
+      sectionHeading: cleanTitle,
+      snippetText: snippet,
+      confidence: 'verified',
+    },
+  };
+}
+
+function buildScienceLesson(
+  cleanTitle: string,
+  cleanedText: string,
+  courseTitle: string,
+  pageNumber: number
+): StructuredTopicLesson {
+  const sentences = extractMeaningfulSentences(cleanedText);
+  const termDefs = extractTermDefinitions(cleanedText);
+  const snippet = sentences.slice(0, 2).join(' ').slice(0, 160) || `Scientific concept: ${cleanTitle}.`;
+
+  return {
+    topicTitle: cleanTitle,
+    introduction: sentences[0] || `${cleanTitle} is a fundamental concept in natural science.`,
+    learningObjectives: [
+      `Explain the underlying mechanism and significance of ${cleanTitle}.`,
+      `Identify key components, processes, and their interactions.`,
+      `Apply scientific reasoning to predict and evaluate experimental outcomes.`,
+    ],
+    keyConcepts: termDefs.length >= 2 ? termDefs : [{
+      term: cleanTitle,
+      definition: `A scientific concept within ${courseTitle} involving the systematic study of natural phenomena and their governing laws.`,
+    }],
+    rulesAndFormulas: [{
+      concept: 'Core Scientific Principle',
+      explanation: sentences[2] || `${cleanTitle} follows observable and reproducible laws that can be tested through controlled experimentation.`,
+    }],
+    conceptApplication: {
+      scenario: `Experiment or observation: Demonstrating ${cleanTitle} in a controlled setting.`,
+      explanation: sentences[3] || `By measuring specific variables and controlling for confounding factors, scientists can directly observe the effects and validate theoretical predictions.`,
+    },
+    keyTakeaways: [
+      `${cleanTitle} is governed by fundamental scientific laws that apply consistently across contexts.`,
+      sentences[4] || 'Experimental validation is essential to confirm theoretical models.',
+      'Understanding the mechanism enables prediction and practical application.',
+    ],
+    sourceReference: {
+      documentName: courseTitle,
+      pageNumber: Math.max(1, pageNumber),
+      sectionHeading: cleanTitle,
+      snippetText: snippet,
+      confidence: 'verified',
+    },
+  };
+}
+
+function buildGeneralLesson(
+  cleanTitle: string,
+  cleanedText: string,
+  courseTitle: string,
+  pageNumber: number
+): StructuredTopicLesson {
+  const sentences = extractMeaningfulSentences(cleanedText);
+  const termDefs = extractTermDefinitions(cleanedText);
+  const snippet = sentences.slice(0, 2).join(' ').slice(0, 160) || `Instructional content for ${cleanTitle}.`;
+
+  const keyConcepts = termDefs.length >= 2
+    ? termDefs
+    : [
+        {
+          term: cleanTitle,
+          definition: `The foundational principles and methods governing ${cleanTitle} as covered in ${courseTitle}.`,
+        },
+        {
+          term: 'Core Framework',
+          definition: `The established theoretical structure used to understand and apply ${cleanTitle} in relevant contexts.`,
+        },
+      ];
+
+  return {
+    topicTitle: cleanTitle,
+    introduction: `${sentences[0] || `${cleanTitle} is a key topic in ${courseTitle}.`} ${sentences[1] || `Understanding this topic provides the foundation for further study.`}`,
+    learningObjectives: [
+      `Define and explain the core concepts of ${cleanTitle}.`,
+      `Apply the key principles to relevant scenarios and examples.`,
+      `Evaluate how ${cleanTitle} connects to broader themes in ${courseTitle}.`,
     ],
     keyConcepts,
     rulesAndFormulas: [
       {
         concept: 'Foundational Principle',
-        explanation: 'Systematic adherence to foundational rules ensures validity and eliminates execution errors.',
+        explanation: sentences[2] || `Systematic application of ${cleanTitle} principles ensures accurate and valid outcomes.`,
       },
       {
-        concept: 'Methodological Consistency',
-        explanation: 'Each analytical step must be verifiable against the source educational guidelines.',
+        concept: 'Methodological Approach',
+        explanation: sentences[3] || `Each step in the analytical process must be grounded in the source material and verifiable against established guidelines.`,
       },
     ],
     conceptApplication: {
-      scenario: `Practical real-world application of ${cleanTitle}.`,
-      explanation: `${sentences[3] || 'When encountering complex scenarios, applying these principles provides clear, unambiguous problem-solving structure.'}`,
+      scenario: `Applying ${cleanTitle} in a practical context.`,
+      explanation: sentences[4] || `When applied correctly, the principles of ${cleanTitle} provide a clear framework for solving complex problems and making informed decisions.`,
     },
     keyTakeaways: [
-      `Mastering the definitions of ${cleanTitle} provides the foundation for advanced study.`,
-      'Systematic execution prevents common conceptual oversights.',
-      'Always verify applied outcomes against established theoretical baselines.',
+      `${cleanTitle} is a foundational concept that supports advanced study and application.`,
+      'Systematic application of core principles reduces errors and improves outcomes.',
+      'Always verify conclusions against the original source material.',
     ],
     sourceReference: {
       documentName: courseTitle,

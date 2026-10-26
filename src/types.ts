@@ -64,6 +64,12 @@ export interface StudyArtifact {
   }[];
   overviewMarkdown: string;
   workedExamplesMarkdown: string;
+  /**
+   * Original extracted document source text for this topic.
+   * Kept separate from overviewMarkdown (the generated lesson) so that
+   * lesson regeneration always uses real source content, never the lesson itself.
+   */
+  sourceText?: string;
   quizData?: {
     question: string;
     options: string[];

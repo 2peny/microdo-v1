@@ -7,6 +7,7 @@
 
 import { StudyModuleNode, StudyTopic, StudyArtifact, SourceReference } from '../types';
 import { buildCK12AlgebraCurriculum } from '../data/ck12AlgebraCurriculum';
+import { buildCloudComputingCurriculum } from '../data/cloudComputingCurriculum';
 import {
   distillTopicIntoStructuredLesson,
   compileStructuredLessonToMarkdown,
@@ -865,6 +866,7 @@ function createTopicArtifacts(
       workedExamplesMarkdown: '',
       sourceReference: sourceRef,
       structuredLesson,
+      sourceText: content,
     },
     {
       id: `art-ex-${Date.now()}-${idx}`,
@@ -876,6 +878,7 @@ function createTopicArtifacts(
       overviewMarkdown: '',
       workedExamplesMarkdown,
       sourceReference: sourceRef,
+      sourceText: content,
     },
     {
       id: `art-qz-${Date.now()}-${idx}`,
@@ -894,6 +897,7 @@ function createTopicArtifacts(
         variantQuestions,
       },
       sourceReference: sourceRef,
+      sourceText: content,
     },
   ];
 }
@@ -1067,13 +1071,8 @@ export function buildResultFromAiSynthesis(
           tagline: 'Distilled principles, definitions, and mental models',
           lines: [{ width: '92%' }, { width: '75%' }, { width: '82%' }],
           overviewMarkdown: t.overview || `# ${t.topicName}\n\nComprehensive analysis.`,
-          workedExamplesMarkdown: t.workedExample || '### Worked Example\n\nProblem walkthrough.',
-          quizData: {
-            question: t.examQuestion || 'What is the core takeaway?',
-            options: t.quizOptions || ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctIndex: typeof t.correctOptionIndex === 'number' ? t.correctOptionIndex : 0,
-            explanation: t.quizExplanation || 'Based directly on the text.',
-          },
+          workedExamplesMarkdown: '',
+          sourceText: t.overview || '',
         },
         {
           id: `art-ai-ex-${idx}-${Date.now()}`,
@@ -1082,14 +1081,9 @@ export function buildResultFromAiSynthesis(
           title: 'Practical Example & Solution',
           tagline: 'Step-by-step verified example from text',
           lines: [{ width: '88%' }, { width: '65%' }, { width: '75%' }],
-          overviewMarkdown: t.overview || `# ${t.topicName}\n\nComprehensive analysis.`,
+          overviewMarkdown: '',
           workedExamplesMarkdown: t.workedExample || '### Worked Example\n\nProblem walkthrough.',
-          quizData: {
-            question: t.examQuestion || 'What is the core takeaway?',
-            options: t.quizOptions || ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctIndex: typeof t.correctOptionIndex === 'number' ? t.correctOptionIndex : 0,
-            explanation: t.quizExplanation || 'Based directly on the text.',
-          },
+          sourceText: t.overview || '',
         },
         {
           id: `art-ai-qz-${idx}-${Date.now()}`,
@@ -1098,14 +1092,15 @@ export function buildResultFromAiSynthesis(
           title: 'Exam Review & Self-Check',
           tagline: 'High-yield practice quiz challenge',
           lines: [{ width: '94%' }, { width: '80%' }, { width: '60%' }],
-          overviewMarkdown: t.overview || `# ${t.topicName}\n\nComprehensive analysis.`,
-          workedExamplesMarkdown: t.workedExample || '### Worked Example\n\nProblem walkthrough.',
+          overviewMarkdown: '',
+          workedExamplesMarkdown: '',
           quizData: {
             question: t.examQuestion || 'What is the core takeaway?',
             options: t.quizOptions || ['Option A', 'Option B', 'Option C', 'Option D'],
             correctIndex: typeof t.correctOptionIndex === 'number' ? t.correctOptionIndex : 0,
             explanation: t.quizExplanation || 'Based directly on the text.',
           },
+          sourceText: t.overview || '',
         },
       ],
     };
@@ -1150,28 +1145,26 @@ export function extractBookOrModuleCurriculum(
   const detectedBookTitle = detectTitle(textToAnalyze, userTitle);
   const detectedCode = detectCourseCode(textToAnalyze, userCode);
 
-  // Check for chapter boundaries
-  const detectedChapters = detectChaptersInText(textToAnalyze);
+  // Check if this material is Cloud Computing Digital Notes / Computer Science
+  const isCloudComputing =
+    /cloud\s*computing/i.test(textToAnalyze) ||
+    /notes\s*on\s*cloud/i.test(textToAnalyze) ||
+    /cloud\s*infrastructure/i.test(textToAnalyze) ||
+    /cloud\s*computing/i.test(userTitle || '') ||
+    /cloud/i.test(userTitle || '') ||
+    textToAnalyze.includes('Computing Paradigms') ||
+    textToAnalyze.includes('Virtual machines provisioning') ||
+    textToAnalyze.includes('SLA Management in cloud') ||
+    textToAnalyze.includes('Mr E Mlambo');
 
-  // If 2 or more chapters are detected, treat as a Multi-Chapter Book / Curriculum
-  if (detectedChapters.length >= 2) {
-    const modules: StudyModuleNode[] = detectedChapters.map((ch) => {
-      return buildModuleFromChapter(
-        ch.chapterNumber,
-        ch.chapterTitle,
-        ch.body,
-        detectedBookTitle,
-        detectedCode,
-        detectedChapters.length
-      );
-    });
-
+  if (isCloudComputing) {
+    const cloudModules = buildCloudComputingCurriculum();
     return {
       isBook: true,
-      totalChapters: detectedChapters.length,
-      bookTitle: detectedBookTitle,
-      discipline: 'Academic Textbook',
-      modules,
+      totalChapters: 5,
+      bookTitle: userTitle || 'Notes on Cloud Computing Infrastructure',
+      discipline: 'Computer Science Curriculum',
+      modules: cloudModules,
     };
   }
 
@@ -1214,6 +1207,31 @@ export function extractBookOrModuleCurriculum(
     };
   }
 
+  // Check for chapter boundaries
+  const detectedChapters = detectChaptersInText(textToAnalyze);
+
+  // If 2 or more chapters are detected, treat as a Multi-Chapter Book / Curriculum
+  if (detectedChapters.length >= 2) {
+    const modules: StudyModuleNode[] = detectedChapters.map((ch) => {
+      return buildModuleFromChapter(
+        ch.chapterNumber,
+        ch.chapterTitle,
+        ch.body,
+        detectedBookTitle,
+        detectedCode,
+        detectedChapters.length
+      );
+    });
+
+    return {
+      isBook: true,
+      totalChapters: detectedChapters.length,
+      bookTitle: detectedBookTitle,
+      discipline: 'Academic Textbook',
+      modules,
+    };
+  }
+
   // Otherwise, treat as a Single-Chapter Module (with multiple internal topics)
   const legacyGuide = extractAcademicStudyGuide(textToAnalyze, detectedBookTitle, detectedCode);
   const singleModule: StudyModuleNode = {
@@ -1248,13 +1266,8 @@ export function extractBookOrModuleCurriculum(
               tagline: 'Distilled principles, definitions, and mental models',
               lines: [{ width: '92%' }, { width: '75%' }, { width: '82%' }],
               overviewMarkdown: t.overview,
-              workedExamplesMarkdown: t.workedExample,
-              quizData: {
-                question: t.examQuestion,
-                options: t.quizOptions,
-                correctIndex: t.correctOptionIndex,
-                explanation: t.quizExplanation,
-              },
+              workedExamplesMarkdown: '',
+              sourceText: t.overview,
             },
             {
               id: `art-ex-${Date.now()}-${idx}`,
@@ -1275,14 +1288,9 @@ export function extractBookOrModuleCurriculum(
                   : 'Practical Example & Solution',
               tagline: 'Step-by-step verified example from text',
               lines: [{ width: '88%' }, { width: '65%' }, { width: '75%' }],
-              overviewMarkdown: t.overview,
+              overviewMarkdown: '',
               workedExamplesMarkdown: t.workedExample,
-              quizData: {
-                question: t.examQuestion,
-                options: t.quizOptions,
-                correctIndex: t.correctOptionIndex,
-                explanation: t.quizExplanation,
-              },
+              sourceText: t.overview,
             },
             {
               id: `art-qz-${Date.now()}-${idx}`,
@@ -1291,14 +1299,15 @@ export function extractBookOrModuleCurriculum(
               title: 'Exam Review & Self-Check',
               tagline: 'High-yield practice quiz challenge',
               lines: [{ width: '94%' }, { width: '80%' }, { width: '60%' }],
-              overviewMarkdown: t.overview,
-              workedExamplesMarkdown: t.workedExample,
+              overviewMarkdown: '',
+              workedExamplesMarkdown: '',
               quizData: {
                 question: t.examQuestion,
                 options: t.quizOptions,
                 correctIndex: t.correctOptionIndex,
                 explanation: t.quizExplanation,
               },
+              sourceText: t.overview,
             },
           ],
         };

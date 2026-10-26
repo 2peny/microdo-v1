@@ -23,6 +23,7 @@ import { StudyArtifact, TopicMasteryRecord, MasteryState } from '../types';
 import { MarkdownViewer } from './MarkdownViewer';
 import { recordQuizAttempt, getTopicMastery, MASTERY_COLORS } from '../utils/masteryEngine';
 import { recordAnalyticsEvent } from '../utils/analyticsEngine';
+import { isRawOrCorruptedLesson } from '../utils/lessonDistiller';
 
 interface StudyInspectorModalProps {
   artifact: StudyArtifact | null;
@@ -329,9 +330,38 @@ export const StudyInspectorModal: React.FC<StudyInspectorModalProps> = ({
                   </p>
                 </div>
 
-                <div className="p-2 sm:p-4 rounded-2xl bg-white border border-slate-100 shadow-2xs">
-                  <MarkdownViewer content={artifact.overviewMarkdown} />
-                </div>
+                {isRawOrCorruptedLesson(artifact.overviewMarkdown) ? (
+                  <div className="p-5 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-950 space-y-3.5 shadow-2xs">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="font-bold text-sm text-amber-950">
+                          Structured Lesson Requires Distillation
+                        </h4>
+                        <p className="text-xs text-amber-800 leading-relaxed">
+                          This topic contains unformatted extracted document text rather than a pedagogical lesson. MicroDo separates raw source text from study resources to guarantee quality.
+                        </p>
+                      </div>
+                    </div>
+
+                    {onRegenerateLesson && (
+                      <div className="pt-1">
+                        <button
+                          onClick={() => onRegenerateLesson(artifact.id)}
+                          disabled={isRegenerating}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer transition-all disabled:opacity-50"
+                        >
+                          <Sparkles className={`w-4 h-4 ${isRegenerating ? 'animate-spin' : ''}`} />
+                          <span>{isRegenerating ? 'Distilling Lesson...' : 'Generate Structured Lesson Now'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2 sm:p-4 rounded-2xl bg-white border border-slate-100 shadow-2xs">
+                    <MarkdownViewer content={artifact.overviewMarkdown} />
+                  </div>
+                )}
               </div>
             )}
 

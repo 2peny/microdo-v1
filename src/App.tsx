@@ -50,11 +50,25 @@ function sanitizeExistingCourses(loadedCourses: StudyDirectoryCourse[]): {
         let topicRepaired = false;
         const artifacts = t.artifacts.map((a) => {
           if (a.type === 'overview' && isRawOrCorruptedLesson(a.overviewMarkdown)) {
+            // Detect domain from topic name and course name
+            const combinedText = `${t.topicName} ${c.name}`.toLowerCase();
+            const domain: 'math' | 'code' | 'general' =
+              /\b(?:algebra|calculus|geometry|trigonometry|statistics|probability|equation|formula|polynomial|integral|derivative)\b/.test(combinedText)
+                ? 'math'
+                : /\b(?:cloud|server|network|software|algorithm|computing|programming|database|code|docker|kubernetes|api|system)\b/.test(combinedText)
+                ? 'code'
+                : 'general';
+
+            // Prefer original source text over the corrupted lesson markdown
+            const sourceForDistillation = a.sourceText && a.sourceText.trim().length > 80
+              ? a.sourceText
+              : t.topicName; // fall back to just the topic name for genuine reconstruction
+
             // Re-distill authentic structured lesson without raw noise
             const cleanLesson = distillTopicIntoStructuredLesson(
               t.topicName,
-              a.overviewMarkdown,
-              'math',
+              sourceForDistillation,
+              domain,
               c.name,
               tIdx + 1
             );
@@ -506,6 +520,7 @@ export default function App() {
       let targetTopicName = 'Key Concepts';
       let targetSourceText = '';
       let targetTopicIndex = 1;
+      let targetDomain: 'math' | 'code' | 'general' = 'general';
 
       for (const course of courses) {
         for (const mod of course.modules) {
@@ -515,8 +530,23 @@ export default function App() {
             if (art) {
               targetCourseName = course.name;
               targetTopicName = top.topicName;
-              targetSourceText = art.overviewMarkdown || '';
               targetTopicIndex = tIdx + 1;
+
+              // Prefer original source text over the lesson markdown
+              targetSourceText =
+                (art.sourceText && art.sourceText.trim().length > 80
+                  ? art.sourceText
+                  : null) ||
+                top.topicName; // genuine reconstruction from topic name if no source text
+
+              // Detect domain from topic name and course name
+              const combinedText = `${top.topicName} ${course.name}`.toLowerCase();
+              targetDomain =
+                /\b(?:algebra|calculus|geometry|trigonometry|statistics|probability|equation|formula|polynomial|integral|derivative)\b/.test(combinedText)
+                  ? 'math'
+                  : /\b(?:cloud|server|network|software|algorithm|computing|programming|database|code|docker|kubernetes|api|system)\b/.test(combinedText)
+                  ? 'code'
+                  : 'general';
               break;
             }
           }
@@ -527,7 +557,7 @@ export default function App() {
       const newLesson = distillTopicIntoStructuredLesson(
         targetTopicName,
         targetSourceText,
-        'math',
+        targetDomain,
         targetCourseName,
         targetTopicIndex
       );
