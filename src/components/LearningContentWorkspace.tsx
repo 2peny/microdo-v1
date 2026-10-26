@@ -22,6 +22,7 @@ interface LearningContentWorkspaceProps {
   artifact: StudyArtifact;
   courseTitle: string;
   chapterTitle?: string;
+  sourceChapterText?: string;
   topicTitle?: string;
   isCompleted: boolean;
   onToggleCompleted: (artifactId: string) => void;
@@ -41,6 +42,7 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
   artifact,
   courseTitle,
   chapterTitle,
+  sourceChapterText,
   topicTitle,
   isCompleted,
   onToggleCompleted,
@@ -55,9 +57,11 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
   onRegenerateLesson,
   isRegenerating = false,
 }) => {
-  const content = artifact.type === 'examples'
+  const lessonContent = artifact.type === 'examples'
     ? artifact.workedExamplesMarkdown
     : artifact.overviewMarkdown;
+  const [isSourceChapterOpen, setIsSourceChapterOpen] = useState(false);
+  const content = isSourceChapterOpen && sourceChapterText ? sourceChapterText : lessonContent;
   const headingIdPrefix = `lesson-${artifact.id}`;
   const headings = useMemo(
     () => extractMarkdownHeadings(content, headingIdPrefix),
@@ -72,7 +76,7 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
   useEffect(() => {
     setActiveHeading(headings[0]?.id || '');
     if (scrollAreaRef.current) scrollAreaRef.current.scrollTop = 0;
-  }, [artifact.id, headings]);
+  }, [artifact.id, headings, isSourceChapterOpen]);
 
   useEffect(() => {
     const root = scrollAreaRef.current;
@@ -99,7 +103,9 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (isContentsOpen) {
+        if (isSourceChapterOpen) {
+          setIsSourceChapterOpen(false);
+        } else if (isContentsOpen) {
           setIsContentsOpen(false);
         } else {
           onClose();
@@ -108,7 +114,7 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isContentsOpen, onClose]);
+  }, [isContentsOpen, isSourceChapterOpen, onClose]);
 
   const scrollToHeading = (id: string) => {
     const heading = scrollAreaRef.current?.querySelector(`#${CSS.escape(id)}`);
@@ -143,12 +149,15 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              if (isSourceChapterOpen) setIsSourceChapterOpen(false);
+              else onClose();
+            }}
             className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:px-3"
-            aria-label="Back to Study Workspace"
+            aria-label={isSourceChapterOpen ? 'Back to lesson' : 'Back to Study Workspace'}
           >
             <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">Study Workspace</span>
+            <span className="hidden sm:inline">{isSourceChapterOpen ? 'Back to lesson' : 'Study Workspace'}</span>
             <span className="sm:hidden">Back</span>
           </button>
           <button
@@ -165,7 +174,7 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
           <div className="hidden min-w-0 sm:block">
             <p className="truncate text-xs text-slate-500">{courseTitle}</p>
             <p className="truncate text-sm font-medium text-slate-800">
-              {topicTitle || artifact.title}
+              {isSourceChapterOpen ? chapterTitle || 'Original chapter' : topicTitle || artifact.title}
             </p>
           </div>
         </div>
@@ -195,26 +204,28 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
               <span className="hidden md:inline">Owner</span>
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => onToggleCompleted(artifact.id)}
-            aria-pressed={isCompleted}
-            aria-label={isCompleted ? 'Mark lesson incomplete' : 'Mark lesson complete'}
-            className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-              isCompleted
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                : 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700'
-            }`}
-          >
-            {isCompleted
-              ? <CheckCircle2 className="h-4 w-4" />
-              : <Check className="h-4 w-4" />}
-            <span className="hidden sm:inline">
-              {isCompleted ? 'Completed' : 'Mark complete'}
-            </span>
-          </button>
+          {!isSourceChapterOpen && (
+            <button
+              type="button"
+              onClick={() => onToggleCompleted(artifact.id)}
+              aria-pressed={isCompleted}
+              aria-label={isCompleted ? 'Mark lesson incomplete' : 'Mark lesson complete'}
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                isCompleted
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  : 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700'
+              }`}
+            >
+              {isCompleted
+                ? <CheckCircle2 className="h-4 w-4" />
+                : <Check className="h-4 w-4" />}
+              <span className="hidden sm:inline">
+                {isCompleted ? 'Completed' : 'Mark complete'}
+              </span>
+            </button>
+          )}
 
-          <details className="group relative">
+          {!isSourceChapterOpen && <details className="group relative">
             <summary
               aria-label="More reading actions"
               className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 [&::-webkit-details-marker]:hidden"
@@ -241,7 +252,7 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
                 </button>
               )}
             </div>
-          </details>
+          </details>}
         </div>
       </header>
 
@@ -269,14 +280,23 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
                   </>
                 )}
                 <span aria-hidden="true">·</span>
-                <span>{artifact.type === 'examples' ? 'Practical example' : 'Key concepts'}</span>
+                <span>{isSourceChapterOpen ? 'Original chapter' : artifact.type === 'examples' ? 'Practical example' : 'Key concepts'}</span>
               </div>
-              {topicTitle && topicTitle !== artifact.title && (
+              {isSourceChapterOpen ? (
+                <>
+                  <h1 className="text-3xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-4xl">
+                    {chapterTitle || 'Original chapter'}
+                  </h1>
+                  <p className="mt-3 text-sm text-slate-500">
+                    Extracted text from {artifact.sourceReference?.documentName || courseTitle}. Original page layout and images may differ.
+                  </p>
+                </>
+              ) : topicTitle && topicTitle !== artifact.title && (
                 <p className="text-sm text-slate-500">{topicTitle}</p>
               )}
             </div>
 
-            {isCorruptedLesson ? (
+            {!isSourceChapterOpen && isCorruptedLesson ? (
               <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
                 <div className="flex items-center gap-2 font-semibold">
                   <h1 id="learning-content-title" className="text-lg">Structured lesson unavailable</h1>
@@ -297,13 +317,13 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
               </div>
             ) : (
               <>
-                <LearningVisual artifact={artifact} />
-                {!headings.some((heading) => heading.level === 1) && (
+                {!isSourceChapterOpen && <LearningVisual artifact={artifact} />}
+                {!isSourceChapterOpen && !headings.some((heading) => heading.level === 1) && (
                   <h1
                     id="learning-content-title"
                     className="mb-8 text-3xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-4xl"
                   >
-                    {artifact.title}
+                    {isSourceChapterOpen ? chapterTitle || 'Original chapter' : artifact.title}
                   </h1>
                 )}
                 <div id={!headings.some((heading) => heading.level === 1) ? undefined : 'learning-content-title'}>
@@ -317,7 +337,7 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
               </>
             )}
 
-            {artifact.sourceReference && (
+            {!isSourceChapterOpen && artifact.sourceReference && (
               <section className="mt-10 border-t border-slate-200 pt-6" aria-label="Original source reference">
                 <h2 className="mb-3 text-sm font-semibold text-slate-800">Original source</h2>
                 <p className="text-sm leading-6 text-slate-700">
@@ -339,13 +359,22 @@ export const LearningContentWorkspace: React.FC<LearningContentWorkspaceProps> =
                     </blockquote>
                   </details>
                 )}
+                {sourceChapterText?.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSourceChapterOpen(true)}
+                    className="mt-4 inline-flex min-h-10 items-center rounded-lg border border-indigo-200 bg-white px-3 text-sm font-medium text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                  >
+                    Open full chapter
+                  </button>
+                )}
               </section>
             )}
           </article>
         </div>
       </main>
 
-      {(onPreviousArtifact || onNextArtifact) && (
+      {!isSourceChapterOpen && (onPreviousArtifact || onNextArtifact) && (
         <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-8">
           <button
             type="button"

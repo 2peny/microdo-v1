@@ -489,6 +489,9 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
               ...mod,
               title: userCh.chapterTitle,
               prefix: `// Chapter ${String(i + 1).padStart(2, '0')}: ${userCh.chapterTitle.slice(0, 22)}`,
+              ...(result.modules.length === editableChapters.length && userCh.body.trim()
+                ? { sourceChapterText: userCh.body.trim() }
+                : {}),
             };
           }
           return mod;

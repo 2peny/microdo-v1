@@ -103,6 +103,7 @@ export interface StudyModuleNode {
   id: string;
   prefix: string; // e.g. "// Module 01: Cache Hierarchy"
   title: string;
+  sourceChapterText?: string;
   courseCode: string; // e.g. "CS-6004 · Chapter 5"
   estimatedHours: string; // e.g. "3.5 hrs"
   summary: string;

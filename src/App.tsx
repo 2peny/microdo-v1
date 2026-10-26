@@ -1051,6 +1051,7 @@ export default function App() {
           artifact={inspectedArtifact}
           courseTitle={currentCourse.name}
           chapterTitle={activeModuleNode?.title}
+          sourceChapterText={activeModuleNode?.sourceChapterText}
           topicTitle={activeTopic?.topicName}
           isCompleted={completedArtifactIds.includes(inspectedArtifact.id)}
           onToggleCompleted={handleToggleArtifactCompleted}
