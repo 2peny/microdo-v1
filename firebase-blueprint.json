@@ -27,8 +27,25 @@
         },
         "role": {
           "type": "string",
-          "enum": ["scholar", "admin"],
-          "description": "Role permission tier"
+          "enum": ["scholar", "guardian", "admin", "super_admin"],
+          "description": "Legacy primary role; authorization is enforced by Firestore rules"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["SUPER_ADMIN", "LEARNER", "PARENT_GUARDIAN"]
+          },
+          "description": "Canonical authorized role assignments; public registration can only create learner or guardian"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "suspended", "pending"],
+          "description": "Account access state checked by Firestore rules"
+        },
+        "lastAdminEventId": {
+          "type": "string",
+          "description": "ID of the atomic audit event for the most recent admin access change"
         },
         "archetype": {
           "type": "string",
@@ -53,12 +70,51 @@
         }
       },
       "required": ["id", "email", "fullName", "username", "role", "archetype"]
+    },
+    "GuardianLink": {
+      "title": "Guardian relationship request",
+      "type": "object",
+      "properties": {
+        "guardianId": { "type": "string" },
+        "learnerEmail": { "type": "string", "format": "email" },
+        "learnerId": { "type": "string" },
+        "learnerDisplayName": { "type": "string", "maxLength": 100 },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "APPROVED", "REJECTED", "REVOKED"]
+        },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "history": { "type": "array", "items": { "type": "object" } }
+      },
+      "required": ["guardianId", "learnerEmail", "status", "createdAt", "updatedAt", "history"]
+    },
+    "AdminAuditEvent": {
+      "title": "Administrative account access event",
+      "type": "object",
+      "properties": {
+        "actorId": { "type": "string" },
+        "targetId": { "type": "string" },
+        "action": { "type": "string" },
+        "roles": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["actorId", "targetId", "action", "roles", "status", "timestamp"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
-      "description": "Individual scholar user account documents identified by Auth UID"
+      "description": "Individual account profiles keyed by Firebase Auth UID; role and status mutations are authorized by Firestore rules"
+    },
+    "/guardianLinks/{linkId}": {
+      "schema": "GuardianLink",
+      "description": "Consent requests. Guardian can create/revoke; matching verified learner can approve or reject. Access is enforced by Firestore rules."
+    },
+    "/adminAuditEvents/{eventId}": {
+      "schema": "AdminAuditEvent",
+      "description": "Admin account-role/status changes written atomically with the user profile update and readable only by an authorized admin."
     }
   }
 }

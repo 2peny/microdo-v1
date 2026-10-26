@@ -6,117 +6,41 @@ import {
 
 const STORAGE_KEY_EVENTS = 'microdo_analytics_events';
 const STORAGE_KEY_JOBS = 'microdo_processing_jobs';
+const SEEDED_EVENT_IDS = new Set([
+  'ev-01',
+  'ev-02',
+  'ev-03',
+  'ev-04',
+  'ev-05',
+  'ev-06',
+  'ev-07',
+  'ev-08',
+  'ev-09',
+]);
+const SEEDED_USER_IDS = new Set(['usr-prof-vance', 'usr-scholar-marcus', 'usr-scholar-liam']);
+const SEEDED_JOB_IDS = new Set(['job-01', 'job-02', 'job-03']);
 
-// Baseline Gemini 2.5 Flash token pricing model (per 1k tokens)
-const COST_PER_1K_INPUT_TOKENS = 0.00015;
-const COST_PER_1K_OUTPUT_TOKENS = 0.0006;
-const AVERAGE_TOKENS_PER_PAGE = 650;
+export function removeSeededBrowserAnalyticsData(): void {
+  getStoredAnalyticsEvents();
+  getStoredProcessingJobs();
+}
 
 export function getStoredAnalyticsEvents(): AnalyticsEvent[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_EVENTS);
-    if (!raw) return seedInitialEventsIfEmpty();
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const events = parsed.filter(
+      (event) => !SEEDED_EVENT_IDS.has(event?.id) && !SEEDED_USER_IDS.has(event?.userId)
+    );
+    if (events.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(events));
+    }
+    return events;
   } catch {
     return [];
   }
-}
-
-function seedInitialEventsIfEmpty(): AnalyticsEvent[] {
-  const now = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-  const initial: AnalyticsEvent[] = [
-    {
-      id: 'ev-01',
-      eventType: 'document_uploaded',
-      timestamp: new Date(now - dayMs * 5).toISOString(),
-      userId: 'usr-prof-vance',
-      isMeaningfulActivity: false,
-      metadata: { fileName: 'ck12-algebra-1.pdf', format: 'pdf', pages: 34 },
-    },
-    {
-      id: 'ev-02',
-      eventType: 'document_processing_completed',
-      timestamp: new Date(now - dayMs * 5 + 4000).toISOString(),
-      userId: 'usr-prof-vance',
-      isMeaningfulActivity: false,
-      metadata: { chaptersDetected: 13, durationMs: 4200 },
-    },
-    {
-      id: 'ev-03',
-      eventType: 'course_created',
-      timestamp: new Date(now - dayMs * 5 + 6000).toISOString(),
-      userId: 'usr-prof-vance',
-      isMeaningfulActivity: false,
-      courseId: 'book-ck12',
-    },
-    {
-      id: 'ev-04',
-      eventType: 'lesson_started',
-      timestamp: new Date(now - dayMs * 4).toISOString(),
-      userId: 'usr-scholar-marcus',
-      isMeaningfulActivity: false,
-      courseId: 'book-ck12',
-      topicId: 'ck12-ch1-t1',
-    },
-    {
-      id: 'ev-05',
-      eventType: 'lesson_completed',
-      timestamp: new Date(now - dayMs * 4 + 180000).toISOString(),
-      userId: 'usr-scholar-marcus',
-      isMeaningfulActivity: true,
-      courseId: 'book-ck12',
-      topicId: 'ck12-ch1-t1',
-    },
-    {
-      id: 'ev-06',
-      eventType: 'quiz_submitted',
-      timestamp: new Date(now - dayMs * 4 + 240000).toISOString(),
-      userId: 'usr-scholar-marcus',
-      isMeaningfulActivity: true,
-      courseId: 'book-ck12',
-      topicId: 'ck12-ch1-t1',
-      metadata: { isCorrect: true, score: 75 },
-    },
-    {
-      id: 'ev-07',
-      eventType: 'quiz_submitted',
-      timestamp: new Date(now - dayMs * 2).toISOString(),
-      userId: 'usr-scholar-liam',
-      isMeaningfulActivity: true,
-      courseId: 'book-ck12',
-      topicId: 'ck12-ch1-t2',
-      metadata: { isCorrect: false, score: 25 },
-    },
-    {
-      id: 'ev-08',
-      eventType: 'quiz_retried',
-      timestamp: new Date(now - dayMs * 2 + 60000).toISOString(),
-      userId: 'usr-scholar-liam',
-      isMeaningfulActivity: true,
-      courseId: 'book-ck12',
-      topicId: 'ck12-ch1-t2',
-      metadata: { isCorrect: true, score: 70 },
-    },
-    {
-      id: 'ev-09',
-      eventType: 'revision_completed',
-      timestamp: new Date(now - dayMs * 1).toISOString(),
-      userId: 'usr-scholar-marcus',
-      isMeaningfulActivity: true,
-      courseId: 'book-ck12',
-      topicId: 'ck12-ch1-t1',
-      metadata: { isCorrect: true, score: 90 },
-    },
-  ];
-
-  try {
-    localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(initial));
-  } catch {
-    // Ignore error
-  }
-  return initial;
 }
 
 export function saveStoredAnalyticsEvents(events: AnalyticsEvent[]): void {
@@ -175,63 +99,17 @@ export function recordAnalyticsEvent(
 export function getStoredProcessingJobs(): ProcessingJob[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_JOBS);
-    if (!raw) return seedInitialJobsIfEmpty();
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const jobs = parsed.filter((job) => !SEEDED_JOB_IDS.has(job?.id));
+    if (jobs.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEY_JOBS, JSON.stringify(jobs));
+    }
+    return jobs;
   } catch {
     return [];
   }
-}
-
-function seedInitialJobsIfEmpty(): ProcessingJob[] {
-  const now = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-  const initial: ProcessingJob[] = [
-    {
-      id: 'job-01',
-      fileName: 'CK12-Algebra-I-Full.pdf',
-      fileSize: 1845000,
-      fileType: 'application/pdf',
-      startedAt: new Date(now - dayMs * 5).toISOString(),
-      completedAt: new Date(now - dayMs * 5 + 4500).toISOString(),
-      stage: 'ready',
-      retryCount: 0,
-      detectedChaptersCount: 13,
-      costEstimate: 0.0042,
-    },
-    {
-      id: 'job-02',
-      fileName: 'Quantum-Electrodynamics-Notes.md',
-      fileSize: 452000,
-      fileType: 'text/markdown',
-      startedAt: new Date(now - dayMs * 3).toISOString(),
-      completedAt: new Date(now - dayMs * 3 + 2800).toISOString(),
-      stage: 'ready',
-      retryCount: 0,
-      detectedChaptersCount: 5,
-      costEstimate: 0.0018,
-    },
-    {
-      id: 'job-03',
-      fileName: 'Molecular-Bio-Syllabus.docx',
-      fileSize: 920000,
-      fileType: 'application/docx',
-      startedAt: new Date(now - dayMs * 1).toISOString(),
-      completedAt: new Date(now - dayMs * 1 + 3100).toISOString(),
-      stage: 'ready',
-      retryCount: 1,
-      recovered: true,
-      detectedChaptersCount: 4,
-      costEstimate: 0.0024,
-    },
-  ];
-
-  try {
-    localStorage.setItem(STORAGE_KEY_JOBS, JSON.stringify(initial));
-  } catch {
-    // Ignore error
-  }
-  return initial;
 }
 
 export function recordProcessingJob(
@@ -261,7 +139,7 @@ export interface AdminProductMetrics {
   weeklyActiveLearnersCount: number;
   uploadToFirstLessonConversionRate: number; // percentage
   firstLessonCompletionRate: number; // percentage
-  sevenDayRetentionRate: number; // percentage
+  sevenDayRetentionRate: number | null; // unavailable without cohort data
   totalQuizAttempts: number;
   totalQuizRetries: number;
   quizRetryRate: number; // percentage
@@ -288,7 +166,7 @@ export function computeAdminProductMetrics(): AdminProductMetrics {
     (e) => e.isMeaningfulActivity && new Date(e.timestamp) >= sevenDaysAgo
   );
   const distinctWeeklyActiveUsers = new Set(recentMeaningfulEvents.map((e) => e.userId));
-  const weeklyActiveLearnersCount = Math.max(distinctWeeklyActiveUsers.size, 1);
+  const weeklyActiveLearnersCount = distinctWeeklyActiveUsers.size;
 
   // 2. Upload-to-First-Lesson Conversion
   // Users who uploaded a document and then started at least one lesson
@@ -305,25 +183,26 @@ export function computeAdminProductMetrics(): AdminProductMetrics {
   const uploadToFirstLessonConversionRate =
     uploaderUsers.size > 0
       ? Math.round((convertedUploaderCount / uploaderUsers.size) * 100)
-      : 84;
+      : 0;
 
   // 3. First-Lesson Completion Rate
   const startersCount = events.filter((e) => e.eventType === 'lesson_started').length;
   const completersCount = events.filter((e) => e.eventType === 'lesson_completed').length;
   const firstLessonCompletionRate =
-    startersCount > 0 ? Math.min(100, Math.round((completersCount / startersCount) * 100)) : 78;
+    startersCount > 0 ? Math.min(100, Math.round((completersCount / startersCount) * 100)) : 0;
 
   // 4. Seven-Day Retention Rate
   // Learners who performed a meaningful action in the first cohort day and returned within 7 days
-  const sevenDayRetentionRate = 67;
+  const sevenDayRetentionRate = null;
 
   // 5. Quiz Attempts and Retries
   const quizSubmittedEvents = events.filter((e) => e.eventType === 'quiz_submitted');
   const quizRetriedEvents = events.filter((e) => e.eventType === 'quiz_retried');
   const totalQuizAttempts = quizSubmittedEvents.length + quizRetriedEvents.length;
   const totalQuizRetries = quizRetriedEvents.length;
-  const quizRetryRate =
-    totalQuizAttempts > 0 ? Math.round((totalQuizRetries / totalQuizAttempts) * 100) : 32;
+  const quizRetryRate = totalQuizAttempts > 0
+    ? Math.round((totalQuizRetries / totalQuizAttempts) * 100)
+    : 0;
 
   let totalScore = 0;
   let scoredCount = 0;
@@ -333,7 +212,7 @@ export function computeAdminProductMetrics(): AdminProductMetrics {
       scoredCount++;
     }
   }
-  const averageQuizScore = scoredCount > 0 ? Math.round(totalScore / scoredCount) : 74;
+  const averageQuizScore = scoredCount > 0 ? Math.round(totalScore / scoredCount) : 0;
 
   // 6. Document Processing Metrics
   const totalJobsCount = jobs.length;
@@ -344,7 +223,7 @@ export function computeAdminProductMetrics(): AdminProductMetrics {
   const processingSuccessRate =
     totalJobsCount > 0
       ? Math.round(((successfulJobs.length + recoveredJobs.length) / totalJobsCount) * 100)
-      : 96;
+      : 0;
 
   let totalDurationSec = 0;
   let timedJobsCount = 0;
@@ -356,31 +235,31 @@ export function computeAdminProductMetrics(): AdminProductMetrics {
       totalDurationSec += dur;
       timedJobsCount++;
     }
-    totalCost += job.costEstimate || 0.0025;
+    totalCost += job.costEstimate || 0;
   }
 
   const averageProcessingTimeSec =
-    timedJobsCount > 0 ? Number((totalDurationSec / timedJobsCount).toFixed(1)) : 3.4;
+    timedJobsCount > 0 ? Number((totalDurationSec / timedJobsCount).toFixed(1)) : 0;
   const estimatedAverageCostPerDoc =
-    totalJobsCount > 0 ? Number((totalCost / totalJobsCount).toFixed(4)) : 0.0028;
+    totalJobsCount > 0 ? Number((totalCost / totalJobsCount).toFixed(4)) : 0;
 
   // 7. Mastery Improvements Net
   const masteryEvents = events.filter((e) => e.eventType === 'mastery_updated');
-  const masteryImprovementNet = Math.max(masteryEvents.length, 5);
+  const masteryImprovementNet = masteryEvents.length;
 
   return {
     weeklyActiveLearnersCount,
     uploadToFirstLessonConversionRate,
     firstLessonCompletionRate,
     sevenDayRetentionRate,
-    totalQuizAttempts: Math.max(totalQuizAttempts, 12),
-    totalQuizRetries: Math.max(totalQuizRetries, 4),
+    totalQuizAttempts,
+    totalQuizRetries,
     quizRetryRate,
     averageQuizScore,
     processingSuccessRate,
-    totalJobsCount: Math.max(totalJobsCount, 3),
+    totalJobsCount,
     failedJobsCount: failedJobs.length,
-    recoveredJobsCount: Math.max(recoveredJobs.length, 1),
+    recoveredJobsCount: recoveredJobs.length,
     averageProcessingTimeSec,
     estimatedAverageCostPerDoc,
     costIsEstimated: true,

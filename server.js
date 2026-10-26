@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SlidingWindowRateLimiter } from './requestRateLimiter.js';
 
 // 1. Resolve directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +37,13 @@ try {
 } catch {
   // Silent fallback
 }
+
+const allowedOrigins = new Set([
+  process.env.APP_ORIGIN || 'https://microdo.nodegrid.space',
+  ...(process.env.NODE_ENV === 'production'
+    ? []
+    : ['http://localhost:5173', 'http://127.0.0.1:5173']),
+]);
 
 // 3. MIME types dictionary for static assets
 const MIME_TYPES = {
@@ -82,12 +90,15 @@ function parseRequestBody(req) {
 }
 
 // 5. Helper to send JSON response
-function sendJson(res, statusCode, data) {
+function sendJson(req, res, statusCode, data) {
   const jsonStr = JSON.stringify(data);
+  const corsHeaders = req.headers.origin
+    ? { 'Access-Control-Allow-Origin': req.headers.origin, Vary: 'Origin' }
+    : {};
   res.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(jsonStr),
-    'Access-Control-Allow-Origin': '*',
+    ...corsHeaders,
   });
   res.end(jsonStr);
 }
@@ -98,12 +109,12 @@ async function handleSummarizeModule(req, res) {
     const { rawText, courseName } = await parseRequestBody(req);
 
     if (!rawText || typeof rawText !== 'string' || rawText.trim().length === 0) {
-      return sendJson(res, 400, { error: 'Course material text is required.' });
+      return sendJson(req, res, 400, { error: 'Course material text is required.' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return sendJson(res, 200, {
+      return sendJson(req, res, 200, {
         fallback: true,
         message: 'AI synthesizer in structured academic mode.',
       });
@@ -221,15 +232,15 @@ ${rawText.slice(0, 40000)}
     }
 
     if (parsedResult) {
-      return sendJson(res, 200, { success: true, data: parsedResult });
+      return sendJson(req, res, 200, { success: true, data: parsedResult });
     }
 
-    return sendJson(res, 200, {
+    return sendJson(req, res, 200, {
       fallback: true,
       message: 'Switched to structured academic parser.',
     });
   } catch {
-    return sendJson(res, 200, {
+    return sendJson(req, res, 200, {
       fallback: true,
       error: 'Summarization service processed via local parser.',
     });
@@ -240,13 +251,13 @@ ${rawText.slice(0, 40000)}
 async function handleUnloadModule(req, res) {
   try {
     const { moduleId, title } = await parseRequestBody(req);
-    return sendJson(res, 200, {
+    return sendJson(req, res, 200, {
       success: true,
       message: `Module "${title || moduleId}" unloaded successfully. Server memory and storage freed.`,
       purgedAt: new Date().toISOString(),
     });
   } catch (error) {
-    return sendJson(res, 400, { error: 'Failed to unload module' });
+    return sendJson(req, res, 400, { error: 'Failed to unload module' });
   }
 }
 
@@ -302,26 +313,51 @@ function serveStaticFile(req, res, pathname) {
 }
 
 // 9. Create HTTP server
+const summarizeRateLimiter = new SlidingWindowRateLimiter(30, 15 * 60 * 1000);
 const server = http.createServer((req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
+  const origin = req.headers.origin;
+
+  if (origin && !allowedOrigins.has(origin)) {
+    res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Origin not allowed.' }));
+    return;
+  }
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    res.writeHead(204, origin ? {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
-    });
+      'Access-Control-Max-Age': '600',
+      Vary: 'Origin',
+    } : {});
     res.end();
     return;
   }
 
   if (pathname === '/api/summarize-module' && req.method === 'POST') {
+    const { allowed, retryAfterSeconds } = summarizeRateLimiter.check(
+      req.socket.remoteAddress || 'unknown'
+    );
+    if (!allowed) {
+      res.writeHead(429, {
+        'Content-Type': 'application/json',
+        'Retry-After': String(retryAfterSeconds),
+      });
+      res.end(JSON.stringify({ error: 'Too many requests. Please try again later.' }));
+      return;
+    }
     return handleSummarizeModule(req, res);
   }
 
   if (pathname === '/api/unload-module' && req.method === 'POST') {
     return handleUnloadModule(req, res);
+  }
+
+  if (pathname.startsWith('/api/admin/')) {
+    return sendJson(req, res, 404, { error: 'Administrative API route not found.' });
   }
 
   if (req.method === 'GET' || req.method === 'HEAD') {

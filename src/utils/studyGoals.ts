@@ -7,8 +7,8 @@ export const DEFAULT_STUDY_GOALS: StudyGoals = {
   weeklyLessonsTarget: 5,
   studyDaysTarget: 4,
   targetMasteryLevel: 'Proficient',
-  daysStudiedThisWeek: 2,
-  lessonsCompletedThisWeek: 3,
+  daysStudiedThisWeek: 0,
+  lessonsCompletedThisWeek: 0,
 };
 
 export function getStudyGoals(): StudyGoals {
@@ -58,7 +58,7 @@ export function recordStudyDay(): void {
 function getDaysStudiedThisWeek(): number {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_STUDIED_DATES);
-    if (!raw) return 2; // Baseline seed
+    if (!raw) return 0;
     const dates: string[] = JSON.parse(raw);
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0 is Sunday
@@ -67,19 +67,19 @@ function getDaysStudiedThisWeek(): number {
     startOfWeek.setHours(0, 0, 0, 0);
 
     const count = dates.filter((d) => new Date(d) >= startOfWeek).length;
-    return Math.max(count, 1);
+    return count;
   } catch {
-    return 2;
+    return 0;
   }
 }
 
 function getLessonsCompletedThisWeek(): number {
   try {
     const raw = localStorage.getItem('microdo_completed_artifacts');
-    if (!raw) return 3; // Baseline seed
+    if (!raw) return 0;
     const artifacts: string[] = JSON.parse(raw);
-    return Math.max(artifacts.length, 3);
+    return artifacts.length;
   } catch {
-    return 3;
+    return 0;
   }
 }

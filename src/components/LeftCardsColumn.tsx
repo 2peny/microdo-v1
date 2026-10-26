@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { StudyModuleNode } from '../types';
 import {
-  BookOpen,
   Clock,
   CheckCircle2,
   ChevronRight,
@@ -99,9 +98,8 @@ export const LeftCardsColumn: React.FC<LeftCardsColumnProps> = ({
         className="w-full sm:w-72 lg:w-80 shrink-0 flex flex-col gap-2.5"
       >
         <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-purple-700">
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>CHAPTER / MODULE RAIL</span>
+          <div className="text-sm font-semibold text-slate-800">
+            <span>Chapters</span>
           </div>
           <span className="text-[11px] font-mono text-slate-500 font-semibold">
             {modules.length} {modules.length === 1 ? 'chapter' : 'chapters'}

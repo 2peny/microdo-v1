@@ -1,7 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { StudyArtifact, StudyTopic } from '../types';
-import { FileText, Calculator, HelpCircle, ArrowUpRight, GraduationCap } from 'lucide-react';
 
 interface RightGreenCardsProps {
   activeTopic: StudyTopic | null;
@@ -31,11 +30,10 @@ export const RightGreenCards: React.FC<RightGreenCardsProps> = ({
     >
       {/* Header */}
       <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-emerald-800">
-          <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
-          <span>STUDY NOTES</span>
+        <div className="text-sm font-semibold text-slate-800">
+          <span>Study notes</span>
         </div>
-        <span className="text-[11px] font-mono font-medium text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+        <span className="text-xs text-slate-500">
           {artifacts.length} study modules
         </span>
       </div>
@@ -51,31 +49,17 @@ export const RightGreenCards: React.FC<RightGreenCardsProps> = ({
               className="group rounded-xl border border-slate-200 hover:border-emerald-500 bg-white hover:bg-slate-50/50 p-4 transition-all duration-150 cursor-pointer shadow-xs hover:shadow-sm text-left flex flex-col justify-between"
             >
               <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-semibold border ${
-                      artifact.type === 'overview'
-                        ? 'bg-purple-50 text-purple-800 border-purple-200'
-                        : artifact.type === 'examples'
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        : 'bg-blue-50 text-blue-800 border-blue-200'
-                    }`}
-                  >
-                    {artifact.type === 'overview' && <FileText className="w-3 h-3" />}
-                    {artifact.type === 'examples' && <Calculator className="w-3 h-3" />}
-                    {artifact.type === 'quiz' && <HelpCircle className="w-3 h-3" />}
-                    <span>
-                      {artifact.type === 'overview'
-                        ? 'Core Overview'
-                        : artifact.type === 'examples'
-                        ? 'Worked Example'
-                        : 'Practice Quiz'}
-                    </span>
+                <div className="mb-2.5 flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-slate-500">
+                    {artifact.type === 'overview'
+                      ? 'Key concepts'
+                      : artifact.type === 'examples'
+                      ? 'Practical example'
+                      : 'Self-check'}
                   </span>
 
-                  <span className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-700 group-hover:text-emerald-800 transition-colors">
+                  <span className="text-xs font-medium text-slate-600 group-hover:text-slate-900 transition-colors">
                     <span>Open</span>
-                    <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                   </span>
                 </div>
 
@@ -91,14 +75,12 @@ export const RightGreenCards: React.FC<RightGreenCardsProps> = ({
               <div className="mt-3.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] font-mono text-slate-400">
                 <span className="text-slate-500">
                   {artifact.type === 'overview'
-                    ? 'Interactive Notes'
+                    ? 'Lesson notes'
                     : artifact.type === 'examples'
-                    ? 'Step-by-step Math'
-                    : 'Multiple Choice Challenge'}
+                    ? 'Worked solution'
+                    : 'Practice questions'}
                 </span>
-                <span className="text-emerald-600 font-semibold group-hover:underline">
-                  {artifact.type === 'quiz' ? 'Take Quiz →' : 'Read Notes →'}
-                </span>
+                <span className="text-slate-500">{artifact.type === 'quiz' ? 'Practice' : 'Read'}</span>
               </div>
             </div>
           );

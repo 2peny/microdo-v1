@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { StudyModuleNode } from '../types';
-import { ChevronRight, Bookmark, Trash2 } from 'lucide-react';
+import { ChevronRight, Trash2 } from 'lucide-react';
 
 interface CenterBlueCardProps {
   moduleNode: StudyModuleNode | null;
@@ -35,9 +35,8 @@ export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
     >
       {/* Roadmap Panel Header */}
       <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-blue-700">
-          <Bookmark className="w-3.5 h-3.5" />
-          <span>KEY TOPICS ROADMAP</span>
+        <div className="text-sm font-semibold text-slate-800">
+          <span>Topics</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-mono text-slate-400">

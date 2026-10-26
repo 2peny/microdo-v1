@@ -1,63 +1,262 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Global Safety Net: default-deny catch-all
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Security Helpers
-    function isSignedIn() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
     }
 
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    function adminAuditPath(eventId) {
+      return /databases/$(database)/documents/adminAuditEvents/$(eventId);
     }
 
-    function incoming() {
-      return request.resource.data;
+    function activeAccount(data) {
+      return !('status' in data) || data.status == 'active';
     }
 
-    function existing() {
-      return resource.data;
+    function hasRole(role) {
+      return signedIn() &&
+        exists(userPath(request.auth.uid)) &&
+        activeAccount(get(userPath(request.auth.uid)).data) &&
+        (
+          get(userPath(request.auth.uid)).data.role == role ||
+          (
+            get(userPath(request.auth.uid)).data.roles is list &&
+            role in get(userPath(request.auth.uid)).data.roles
+          )
+        );
     }
 
-    function isValidUser(data) {
+    function isAdmin() {
+      return signedIn() &&
+        exists(userPath(request.auth.uid)) &&
+        activeAccount(get(userPath(request.auth.uid)).data) &&
+        (
+          get(userPath(request.auth.uid)).data.role in ['admin', 'super_admin'] ||
+          (
+            get(userPath(request.auth.uid)).data.roles is list &&
+            'SUPER_ADMIN' in get(userPath(request.auth.uid)).data.roles
+          )
+        );
+    }
+
+    function isGuardian() {
+      return hasRole('guardian') || hasRole('PARENT_GUARDIAN');
+    }
+
+    function isLearner() {
+      return hasRole('scholar') || hasRole('LEARNER');
+    }
+
+    function validProfile(data, uid) {
       return data.keys().hasAll(['id', 'email', 'fullName', 'username', 'role', 'archetype']) &&
-             data.keys().hasOnly(['id', 'email', 'fullName', 'username', 'role', 'archetype', 'archetypeLabel', 'avatarEmoji', 'majorOrFocus', 'createdAt']) &&
-             data.id is string && data.id == request.auth.uid &&
-             data.email is string && data.email.size() <= 150 &&
-             data.fullName is string && data.fullName.size() <= 100 &&
-             data.username is string && data.username.size() <= 50 &&
-             data.role in ['scholar', 'admin'] &&
-             data.archetype is string && data.archetype.size() <= 50;
+        data.keys().hasOnly([
+          'id', 'email', 'fullName', 'username', 'role', 'archetype',
+          'archetypeLabel', 'avatarEmoji', 'majorOrFocus', 'createdAt',
+          'roles', 'status', 'lastAdminEventId'
+        ]) &&
+        data.id == uid &&
+        data.email is string && data.email.size() <= 150 &&
+        data.fullName is string && data.fullName.size() <= 100 &&
+        data.username is string && data.username.size() <= 50 &&
+        data.role in ['scholar', 'guardian', 'admin', 'super_admin'] &&
+        data.archetype is string && data.archetype.size() <= 50 &&
+        (!('roles' in data) ||
+          (data.roles is list && data.roles.size() > 0 &&
+            data.roles.hasOnly(['LEARNER', 'PARENT_GUARDIAN', 'SUPER_ADMIN']))) &&
+        (!('status' in data) || data.status in ['active', 'suspended', 'pending']) &&
+        (!('lastAdminEventId' in data) ||
+          (data.lastAdminEventId is string && data.lastAdminEventId.size() > 0 &&
+            data.lastAdminEventId.size() <= 150));
     }
 
-    // Users Collection: Strictly secured by Auth UID
     match /users/{userId} {
-      // PII Protection: only the owner can read their own profile
-      allow get: if isOwner(userId);
-      allow list: if false;
+      allow get: if signedIn() &&
+        (
+          request.auth.uid == userId ||
+          isAdmin()
+        );
+      allow list: if isAdmin();
 
-      // Create: Owner can create their initial profile, defaulting role to scholar (no self-assigned admin)
-      allow create: if isOwner(userId) &&
-                       isValidId(userId) &&
-                       isValidUser(incoming()) &&
-                       incoming().role == 'scholar';
+      allow create: if signedIn() &&
+        request.auth.uid == userId &&
+        validProfile(request.resource.data, userId) &&
+        (
+          (
+            request.resource.data.role == 'scholar' &&
+            (
+              !('roles' in request.resource.data) ||
+              request.resource.data.roles == ['LEARNER']
+            )
+          ) ||
+          (
+            request.resource.data.role == 'guardian' &&
+            request.resource.data.roles == ['PARENT_GUARDIAN']
+          )
+        );
 
-      // Update: Owner can update profile; ID and role are immutable
-      allow update: if isOwner(userId) &&
-                       isValidId(userId) &&
-                       isValidUser(incoming()) &&
-                       incoming().id == existing().id &&
-                       incoming().role == existing().role;
+      allow update: if signedIn() && (
+        (
+          request.auth.uid == userId &&
+          validProfile(request.resource.data, userId) &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.get('roles', []) == resource.data.get('roles', []) &&
+          request.resource.data.get('status', 'active') == resource.data.get('status', 'active')
+        ) ||
+        (
+          isAdmin() &&
+          validProfile(request.resource.data, userId) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['role', 'roles', 'status', 'lastAdminEventId']) &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['role', 'roles', 'status']) &&
+          request.resource.data.lastAdminEventId is string &&
+          existsAfter(adminAuditPath(request.resource.data.lastAdminEventId)) &&
+          getAfter(adminAuditPath(request.resource.data.lastAdminEventId)).data.actorId ==
+            request.auth.uid &&
+          getAfter(adminAuditPath(request.resource.data.lastAdminEventId)).data.targetId == userId &&
+          getAfter(adminAuditPath(request.resource.data.lastAdminEventId)).data.roles ==
+            request.resource.data.roles &&
+          getAfter(adminAuditPath(request.resource.data.lastAdminEventId)).data.status ==
+            request.resource.data.status
+        )
+      );
 
       allow delete: if false;
+    }
+
+    match /guardianLinks/{linkId} {
+      allow get, list: if signedIn() &&
+        (
+          isAdmin() ||
+          (exists(userPath(request.auth.uid)) &&
+            activeAccount(get(userPath(request.auth.uid)).data) &&
+            (
+              (isGuardian() && resource.data.guardianId == request.auth.uid) ||
+              (
+                isLearner() &&
+                request.auth.token.email_verified == true &&
+                resource.data.learnerEmail == request.auth.token.email
+              )
+            ))
+        );
+
+      allow create: if signedIn() &&
+        activeAccount(get(userPath(request.auth.uid)).data) &&
+        isGuardian() &&
+        request.auth.token.email_verified == true &&
+        request.resource.data.keys().hasOnly([
+          'guardianId', 'learnerEmail', 'status', 'createdAt', 'updatedAt', 'history'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'guardianId', 'learnerEmail', 'status', 'createdAt', 'updatedAt', 'history'
+        ]) &&
+        request.resource.data.guardianId == request.auth.uid &&
+        request.resource.data.learnerEmail is string &&
+        request.resource.data.learnerEmail.size() <= 254 &&
+        request.resource.data.status == 'PENDING' &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.get('history', []) == [
+          {
+            'actorId': request.auth.uid,
+            'action': 'REQUESTED'
+          }
+        ];
+
+      allow update: if signedIn() &&
+        activeAccount(get(userPath(request.auth.uid)).data) &&
+        request.resource.data.guardianId == resource.data.guardianId &&
+        request.resource.data.learnerEmail == resource.data.learnerEmail &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.history.size() == resource.data.history.size() + 1 &&
+        request.resource.data.history.hasAll(resource.data.history) &&
+        request.resource.data.history[resource.data.history.size()].actorId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt', 'history', 'learnerDisplayName', 'learnerId']) &&
+        (
+          (
+            isLearner() &&
+            request.auth.token.email_verified == true &&
+            request.auth.token.email == resource.data.learnerEmail &&
+            resource.data.status == 'PENDING' &&
+            request.resource.data.status in ['APPROVED', 'REJECTED'] &&
+            request.resource.data.history[resource.data.history.size()].action ==
+              request.resource.data.status &&
+            (
+              (request.resource.data.status == 'APPROVED' &&
+                request.resource.data.learnerDisplayName is string &&
+                request.resource.data.learnerDisplayName.size() > 0 &&
+                request.resource.data.learnerDisplayName.size() <= 100 &&
+                request.resource.data.learnerId == request.auth.uid) ||
+              (request.resource.data.status == 'REJECTED' &&
+                request.resource.data.get('learnerId', '') ==
+                  resource.data.get('learnerId', '') &&
+                request.resource.data.get('learnerDisplayName', '') ==
+                  resource.data.get('learnerDisplayName', ''))
+            )
+          ) ||
+          (
+            isGuardian() &&
+            request.auth.token.email_verified == true &&
+            resource.data.guardianId == request.auth.uid &&
+            resource.data.status == 'APPROVED' &&
+            request.resource.data.status == 'REVOKED' &&
+            request.resource.data.history[resource.data.history.size()].action == 'REVOKED' &&
+            request.resource.data.get('learnerId', '') == resource.data.learnerId &&
+            request.resource.data.get('learnerDisplayName', '') ==
+              resource.data.get('learnerDisplayName', '')
+          ) ||
+          (
+            isGuardian() &&
+            request.auth.token.email_verified == true &&
+            resource.data.guardianId == request.auth.uid &&
+            resource.data.status in ['REJECTED', 'REVOKED'] &&
+            request.resource.data.status == 'PENDING' &&
+            request.resource.data.history[resource.data.history.size()].action == 'REQUESTED' &&
+            request.resource.data.get('learnerId', '') ==
+              resource.data.get('learnerId', '') &&
+            request.resource.data.get('learnerDisplayName', '') ==
+              resource.data.get('learnerDisplayName', '')
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    match /adminAuditEvents/{eventId} {
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin() &&
+        request.resource.data.keys().hasOnly([
+          'actorId', 'targetId', 'action', 'roles', 'status', 'timestamp'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'actorId', 'targetId', 'action', 'roles', 'status', 'timestamp'
+        ]) &&
+        request.resource.data.actorId == request.auth.uid &&
+        request.resource.data.targetId is string &&
+        request.resource.data.action == 'USER_ACCESS_UPDATED' &&
+        request.resource.data.roles is list &&
+        request.resource.data.status in ['active', 'suspended', 'pending'] &&
+        request.resource.data.timestamp == request.time &&
+        existsAfter(userPath(request.resource.data.targetId)) &&
+        getAfter(userPath(request.resource.data.targetId)).data.roles == request.resource.data.roles &&
+        getAfter(userPath(request.resource.data.targetId)).data.status == request.resource.data.status &&
+        getAfter(userPath(request.resource.data.targetId)).data.lastAdminEventId == eventId &&
+        getAfter(userPath(request.resource.data.targetId)).data.diff(
+          get(userPath(request.resource.data.targetId)).data
+        ).affectedKeys().hasAny(['role', 'roles', 'status']);
+
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

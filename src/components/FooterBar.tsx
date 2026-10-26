@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HelpCircle, Trash2, Layers, UserCheck, ShieldCheck, Crown } from 'lucide-react';
+import { HelpCircle, Trash2, UserCheck, Crown } from 'lucide-react';
 import { ScholarUser } from '../types';
 import { LegalModal, LegalTab } from './LegalModal';
 
@@ -43,9 +43,8 @@ export const FooterBar: React.FC<FooterBarProps> = ({
     <footer className="w-full border-t border-slate-200 bg-white py-2.5 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 text-xs font-sans text-slate-500 z-20">
       {/* Left side: Brand, FAQ & controls */}
       <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-        <span className="font-medium text-slate-700 font-mono flex items-center gap-1.5">
-          <Layers className="w-3.5 h-3.5 text-indigo-600" />
-          <span>MicroDo · Nodegrid</span>
+        <span className="font-medium text-slate-700">
+          MicroDo · Nodegrid
         </span>
         <span className="text-slate-300">·</span>
 
@@ -109,12 +108,8 @@ export const FooterBar: React.FC<FooterBarProps> = ({
         )}
       </div>
 
-      {/* Right side: Session status & Auth Overlay Trigger */}
-      <div className="flex items-center gap-2.5 text-xs font-mono">
-        <span className="text-slate-400 text-[11px] hidden md:inline">
-          Station Clearance Active
-        </span>
-
+      {/* Right side: Admin and authentication actions */}
+      <div className="flex items-center gap-2.5 text-xs">
         {onOpenSuperuser && (
           <button
             type="button"

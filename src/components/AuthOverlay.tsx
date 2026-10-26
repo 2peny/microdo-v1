@@ -20,14 +20,14 @@ import { ScholarUser, ScholarArchetype } from '../types';
 import {
   ARCHETYPES,
   saveStoredUser,
-  authenticateUser,
-  registerScholarUser,
 } from '../utils/authStorage';
 import {
   registerWithFirebase,
   loginWithFirebase,
   signInWithGooglePopup,
   signOutScholar,
+  sendAccountVerificationEmail,
+  requestPasswordReset,
 } from '../lib/firebase';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -61,6 +61,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [username, setUsername] = useState('');
   const [selectedArchetype, setSelectedArchetype] = useState<ScholarArchetype>('midnight_owl');
   const [majorFocus, setMajorFocus] = useState('Computer Systems');
+  const [registrationRole, setRegistrationRole] = useState<'scholar' | 'guardian'>('scholar');
 
   // UI States
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -68,6 +69,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -78,6 +80,17 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (pass.length < 8) return { score: 2, label: '🖋️ Moderate', color: 'text-blue-500', bar: 'w-2/4 bg-blue-500' };
     if (pass.length < 12) return { score: 3, label: '📜 Strong', color: 'text-indigo-600', bar: 'w-3/4 bg-indigo-600' };
     return { score: 4, label: '🏛️ Fortress Grade', color: 'text-emerald-600', bar: 'w-full bg-emerald-500' };
+  };
+
+  const handlePasswordReset = async () => {
+    setErrorMsg(null);
+    setResetNotice(null);
+    try {
+      await requestPasswordReset(identifier);
+      setResetNotice('If an account matches that address, a password reset link will be sent.');
+    } catch (resetError) {
+      setErrorMsg(resetError instanceof Error ? resetError.message : 'The password reset request failed.');
+    }
   };
 
   const strength = getPasswordStrength(password);
@@ -117,17 +130,16 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   // Map Firebase errors to human friendly text
   const formatAuthError = (err: any): string => {
     const code = err?.code || '';
-    const msg = err?.message || '';
     const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
     if (code === 'auth/unauthorized-domain') {
-      return `Domain "${host}" is not authorized for Google Sign-In in Firebase project (${firebaseConfig.projectId}). Add it in Firebase Console or continue as Local Scholar.`;
+      return `Domain "${host}" is not authorized for sign-in in Firebase project (${firebaseConfig.projectId}). Add it in Firebase Console or use the clearly labelled guest option.`;
     }
     if (code === 'auth/operation-not-allowed') {
-      return `Email/Password sign-in is disabled in Firebase project (${firebaseConfig.projectId}). Please enable it in Firebase Console or continue locally.`;
+      return `Email/Password sign-in is disabled in Firebase project (${firebaseConfig.projectId}). Enable it in Firebase Console or use the clearly labelled guest option.`;
     }
     if (code === 'auth/email-already-in-use') {
-      return 'This email is already registered. Please switch to Sign In.';
+      return 'Account registration could not be completed. Try signing in or use password recovery.';
     }
     if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
       return 'Invalid email or password. Please verify your credentials.';
@@ -144,7 +156,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (code === 'auth/network-request-failed') {
       return 'Network issue connecting to authentication service. Please check your connection.';
     }
-    return msg || 'Authentication failed. Please try again.';
+    return 'Authentication failed. Please try again.';
   };
 
   // Submit Handler
@@ -172,11 +184,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
         try {
           authenticatedUser = await loginWithFirebase(cleanIdent, password);
         } catch (firebaseErr: any) {
-          // Check local scholar accounts if Firebase fails
-          const localUser = authenticateUser(cleanIdent, password);
-          if (localUser) {
-            authenticatedUser = localUser;
-          } else if (
+          if (
             firebaseErr?.code === 'auth/operation-not-allowed' ||
             firebaseErr?.code === 'auth/unauthorized-domain'
           ) {
@@ -184,9 +192,8 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
             setErrorMsg(formatAuthError(firebaseErr));
             setIsSubmitting(false);
             return;
-          } else {
-            throw firebaseErr;
           }
+          throw firebaseErr;
         }
 
         saveStoredUser(authenticatedUser);
@@ -217,39 +224,25 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           return;
         }
 
-        let newUser: ScholarUser;
+        const newUser = await registerWithFirebase({
+          email: cleanEmail,
+          password,
+          fullName: cleanName,
+          username: cleanUsername,
+          archetype: selectedArchetype,
+          majorOrFocus: majorFocus || 'Computer Systems',
+          role: registrationRole,
+        });
+        let verificationNotice = '';
         try {
-          newUser = await registerWithFirebase({
-            email: cleanEmail,
-            password,
-            fullName: cleanName,
-            username: cleanUsername,
-            archetype: selectedArchetype,
-            majorOrFocus: majorFocus || 'Computer Systems',
-          });
-        } catch (firebaseErr: any) {
-          if (
-            firebaseErr?.code === 'auth/operation-not-allowed' ||
-            firebaseErr?.code === 'auth/unauthorized-domain'
-          ) {
-            // Graceful fallback to local scholar storage
-            newUser = registerScholarUser({
-              email: cleanEmail,
-              fullName: cleanName,
-              username: cleanUsername,
-              role: 'scholar',
-              archetype: selectedArchetype,
-              archetypeLabel: ARCHETYPES[selectedArchetype].label,
-              avatarEmoji: ARCHETYPES[selectedArchetype].emoji,
-              majorOrFocus: majorFocus || 'Computer Systems',
-            });
-          } else {
-            throw firebaseErr;
-          }
+          await sendAccountVerificationEmail();
+          verificationNotice = ' Check your email to verify the account before requesting or approving guardian links.';
+        } catch {
+          verificationNotice = ' The account was created, but the verification email could not be sent. You can request another from the guardian workspace.';
         }
 
         saveStoredUser(newUser);
-        setSuccessNotice(`Account active for ${newUser.fullName}!`);
+        setSuccessNotice(`Account created for ${newUser.fullName}.${verificationNotice}`);
         setTimeout(() => {
           setIsSubmitting(false);
           onLoginSuccess(newUser);
@@ -257,7 +250,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
         }, 500);
       }
     } catch (err: any) {
-      console.error('Auth error:', err);
+      console.error('Authentication failed', { code: err?.code || 'unknown' });
       setAuthErrorCode(err?.code || null);
       setErrorMsg(formatAuthError(err));
       setIsSubmitting(false);
@@ -270,7 +263,9 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     setAuthErrorCode(null);
     setIsGoogleSubmitting(true);
     try {
-      const googleUser = await signInWithGooglePopup();
+      const googleUser = await signInWithGooglePopup(
+        mode === 'register' ? registrationRole : 'scholar'
+      );
       saveStoredUser(googleUser);
       setSuccessNotice(`Signed in with Google as ${googleUser.fullName}!`);
       setTimeout(() => {
@@ -386,6 +381,11 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span className="font-medium font-sans">{successNotice}</span>
               </motion.div>
+            )}
+            {resetNotice && (
+              <div role="status" className="rounded-lg border border-indigo-200 bg-indigo-50 p-2.5 text-xs text-indigo-800">
+                {resetNotice}
+              </div>
             )}
           </AnimatePresence>
 
@@ -611,6 +611,26 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   </div>
                 </div>
 
+                <div>
+                  <label htmlFor="registration-role" className="block text-xs font-semibold text-slate-700 mb-1">
+                    Create a learner or guardian account
+                  </label>
+                  <select
+                    id="registration-role"
+                    value={registrationRole}
+                    onChange={(event) => setRegistrationRole(event.target.value as 'scholar' | 'guardian')}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-xs text-slate-900 bg-white"
+                  >
+                    <option value="scholar">Learner</option>
+                    <option value="guardian">Parent / Guardian</option>
+                  </select>
+                  {registrationRole === 'guardian' && (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Learner access is available only after the learner approves your request.
+                    </p>
+                  )}
+                </div>
+
                 {/* Archetype Picker */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
@@ -689,6 +709,13 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void handlePasswordReset()}
+                  className="mt-2 text-[11px] font-medium text-indigo-700 hover:underline"
+                >
+                  Forgot password?
+                </button>
               </div>
             )}
 
@@ -779,43 +806,6 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
               </button>
             </div>
 
-            {/* Platform Owner / Superuser Quick Sign In */}
-            <div className="pt-1 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  const ownerUser: ScholarUser = {
-                    id: 'usr-owner-001',
-                    username: 'owner',
-                    email: 'owner@microdo.space',
-                    fullName: 'Platform Owner (Superuser)',
-                    archetype: 'deep_monk',
-                    archetypeLabel: 'Deep Focus Monk',
-                    avatarEmoji: '👑',
-                    majorOrFocus: 'Platform Architecture & Research',
-                    joinedAt: '2026-09-01',
-                    role: 'super_admin',
-                    status: 'active',
-                    permissions: {
-                      canUploadModules: true,
-                      canDeleteModules: true,
-                      canUseAiDistill: true,
-                      canManageUsers: true,
-                      canViewAnalytics: true,
-                      isSuperUser: true,
-                    },
-                  };
-                  saveStoredUser(ownerUser);
-                  onLoginSuccess(ownerUser);
-                  onClose();
-                }}
-                className="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/80 py-1 px-3 rounded-lg border border-amber-200 transition-colors cursor-pointer"
-                title="Immediate Owner Access with Superuser Clearance"
-              >
-                <span>👑</span>
-                <span>Sign In as Platform Owner (Superuser)</span>
-              </button>
-            </div>
           </form>
         </div>
 

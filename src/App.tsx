@@ -15,6 +15,7 @@ import { RightGreenCards } from './components/RightGreenCards';
 import { ConnectorLines } from './components/ConnectorLines';
 import { BreadcrumbNav } from './components/BreadcrumbNav';
 import { StudyInspectorModal } from './components/StudyInspectorModal';
+import { LearningContentWorkspace } from './components/LearningContentWorkspace';
 import { UploadModuleModal } from './components/UploadModuleModal';
 import { FaqModal } from './components/FaqModal';
 import { UnloadConfirmModal } from './components/UnloadConfirmModal';
@@ -22,11 +23,13 @@ import { AuthOverlay } from './components/AuthOverlay';
 import { FooterBar } from './components/FooterBar';
 import { SuperuserDashboard } from './components/SuperuserDashboard';
 import { LearnerDashboard } from './components/LearnerDashboard';
+import { GuardianWorkspace } from './components/GuardianWorkspace';
+import { GuardianConsent } from './components/GuardianConsent';
 import { FocusModeModal } from './components/FocusModeModal';
 import { StudyGoalsModal } from './components/StudyGoalsModal';
-import { getStoredUser, saveStoredUser, recordModuleUploadStat, recordAuditLog } from './utils/authStorage';
-import { onScholarAuthStateChanged, validateFirestoreConnection } from './lib/firebase';
-import { recordAnalyticsEvent } from './utils/analyticsEngine';
+import { getStoredUser, saveStoredUser } from './utils/authStorage';
+import { onScholarAuthStateChanged, signOutScholar, validateFirestoreConnection } from './lib/firebase';
+import { recordAnalyticsEvent, removeSeededBrowserAnalyticsData } from './utils/analyticsEngine';
 import { processOfflineQueue, getOfflineQueue } from './utils/offlineSync';
 import {
   distillTopicIntoStructuredLesson,
@@ -130,6 +133,7 @@ export default function App() {
   });
 
   const [currentCourseId] = useState<string>('course-new');
+  const [verifiedAdminId, setVerifiedAdminId] = useState<string | null>(null);
 
   // Currently active course
   const currentCourse = courses[0] || EMPTY_STUDY_COURSE;
@@ -236,6 +240,10 @@ export default function App() {
   const [masteryRevisionKey, setMasteryRevisionKey] = useState(0);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [currentUser, setCurrentUser] = useState<ScholarUser | null>(() => getStoredUser());
+  const [currentWorkspace, setCurrentWorkspace] = useState<'learner' | 'guardian'>('learner');
+  const [guardianConsentRequestId, setGuardianConsentRequestId] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get('guardian-consent')
+  );
   const [mobileActiveTab, setMobileActiveTab] = useState<'modules' | 'roadmap' | 'notes'>('roadmap');
   const [isRegeneratingLesson, setIsRegeneratingLesson] = useState(false);
 
@@ -244,6 +252,8 @@ export default function App() {
   const [offlinePendingCount, setOfflinePendingCount] = useState<number>(0);
 
   useEffect(() => {
+    removeSeededBrowserAnalyticsData();
+
     const handleOnline = () => {
       setIsOffline(false);
       processOfflineQueue();
@@ -273,8 +283,28 @@ export default function App() {
     // Listen to real Firebase auth changes across sessions
     const unsubscribe = onScholarAuthStateChanged((user) => {
       if (user) {
+        const isAdmin = user.role === 'admin' || user.role === 'super_admin' ||
+          user.roles?.includes('SUPER_ADMIN') === true;
+        setVerifiedAdminId(isAdmin ? user.id : null);
         setCurrentUser(user);
         saveStoredUser(user);
+        setCurrentWorkspace(
+          user.roles?.includes('PARENT_GUARDIAN') &&
+            !user.roles.includes('LEARNER') &&
+            !isAdmin
+            ? 'guardian'
+            : 'learner'
+        );
+        if (isAdmin) setIsSuperuserOpen(true);
+      } else {
+        setVerifiedAdminId(null);
+        setIsSuperuserOpen(false);
+        setCurrentWorkspace('learner');
+        setCurrentUser((previous) => {
+          if (previous?.id.startsWith('local-')) return previous;
+          saveStoredUser(null);
+          return null;
+        });
       }
     });
 
@@ -284,6 +314,25 @@ export default function App() {
   const handleLoginSuccess = (user: ScholarUser | null) => {
     setCurrentUser(user);
     saveStoredUser(user);
+    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin' ||
+      user?.roles?.includes('SUPER_ADMIN') === true;
+    setCurrentWorkspace(
+      user?.roles?.includes('PARENT_GUARDIAN') &&
+        !user.roles.includes('LEARNER') &&
+        !isAdmin
+        ? 'guardian'
+        : 'learner'
+    );
+    if (isAdmin) setIsSuperuserOpen(true);
+  };
+  const canOpenSuperuser =
+    verifiedAdminId !== null && currentUser?.id === verifiedAdminId;
+
+  const handleGuardianSignOut = async () => {
+    await signOutScholar();
+    saveStoredUser(null);
+    setCurrentUser(null);
+    setCurrentWorkspace('learner');
   };
 
   const handleOpenAuth = (mode: 'login' | 'register' = 'login') => {
@@ -412,16 +461,6 @@ export default function App() {
     } catch {
       // Safe fallback
     }
-
-    // Record upload metrics & audit logging for Owner Backend
-    recordModuleUploadStat(newModules.length, newModules.length, true);
-    recordAuditLog(
-      'MODULE_UPLOADED',
-      'module',
-      `Ingested ${newModules.length} module(s) (${bookTitle || 'Course Material'}) into workspace`,
-      currentUser ? { name: currentUser.fullName, email: currentUser.email, role: currentUser.role } : undefined,
-      'success'
-    );
 
     setUnloadToast({
       message:
@@ -649,8 +688,53 @@ export default function App() {
     completedArtifactIds.includes(a.id)
   ).length;
 
+  if (guardianConsentRequestId) {
+    return (
+      <>
+        <GuardianConsent
+          requestId={guardianConsentRequestId}
+          currentUser={currentUser}
+          onSignIn={() => handleOpenAuth('login')}
+          onReturn={() => {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('guardian-consent');
+            window.history.replaceState({}, '', url.toString());
+            setGuardianConsentRequestId(null);
+            setCurrentWorkspace(
+              currentUser?.roles?.includes('PARENT_GUARDIAN') &&
+                !currentUser.roles.includes('LEARNER')
+                ? 'guardian'
+                : 'learner'
+            );
+          }}
+        />
+        <AuthOverlay
+          isOpen={isAuthOpen}
+          onClose={() => setIsAuthOpen(false)}
+          currentUser={currentUser}
+          onLoginSuccess={handleLoginSuccess}
+          initialMode={authMode}
+        />
+      </>
+    );
+  }
+
+  if (currentWorkspace === 'guardian' && currentUser) {
+    return (
+      <GuardianWorkspace
+        currentUser={currentUser}
+        onSwitchToLearner={
+          currentUser.roles?.includes('LEARNER')
+            ? () => setCurrentWorkspace('learner')
+            : undefined
+        }
+        onSignOut={handleGuardianSignOut}
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#f6f8fa] text-slate-800 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen w-full overflow-x-clip bg-[#f6f8fa] text-slate-800 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
       {/* 1. Header */}
       <Header
         courseName={currentCourse.name}
@@ -663,7 +747,12 @@ export default function App() {
         onResetFlow={handleResetFlow}
         currentUser={currentUser}
         onOpenAuth={handleOpenAuth}
-        onOpenSuperuser={() => setIsSuperuserOpen(true)}
+        onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
+        onOpenGuardian={
+          currentUser?.roles?.includes('PARENT_GUARDIAN')
+            ? () => setCurrentWorkspace('guardian')
+            : undefined
+        }
         currentView={currentView}
         onViewChange={(v) => setCurrentView(v)}
         onOpenStudyGoals={() => setIsGoalsModalOpen(true)}
@@ -882,20 +971,14 @@ export default function App() {
         onClearToEmptyState={handleClearToEmptyState}
         hasModules={currentCourse.modules.length > 0}
         onOpenAuth={handleOpenAuth}
-        onOpenSuperuser={() => setIsSuperuserOpen(true)}
+        onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
       />
 
       {/* Superuser / Owner Backend Control Center */}
       <SuperuserDashboard
-        isOpen={isSuperuserOpen}
+        isOpen={isSuperuserOpen && canOpenSuperuser}
         onClose={() => setIsSuperuserOpen(false)}
         currentUser={currentUser}
-        onUserSwitched={handleLoginSuccess}
-        courses={courses}
-        onPurgeModule={(moduleId) => {
-          const mod = courses.flatMap((c) => c.modules).find((m) => m.id === moduleId);
-          if (mod) handleConfirmUnloadModule(mod);
-        }}
       />
 
       {/* Quirky Scholar Authentication & Registration Overlay */}
@@ -907,25 +990,41 @@ export default function App() {
         initialMode={authMode}
       />
 
-      {/* Study Inspector Modal */}
-      <StudyInspectorModal
-        artifact={inspectedArtifact}
-        topicId={activeTopic?.id}
-        courseId={currentCourse.id}
-        moduleId={selectedModuleId || undefined}
-        isCompleted={
-          inspectedArtifact ? completedArtifactIds.includes(inspectedArtifact.id) : false
-        }
-        onToggleCompleted={handleToggleArtifactCompleted}
-        onClose={() => setInspectedArtifact(null)}
-        onOpenFocusMode={(art) => {
-          setFocusArtifact(art);
-          setIsFocusModeOpen(true);
-        }}
-        onMasteryUpdated={() => setMasteryRevisionKey((k) => k + 1)}
-        onRegenerateLesson={handleRegenerateLesson}
-        isRegenerating={isRegeneratingLesson}
-      />
+      {/* Reading resources use the document workspace; quizzes retain their interactive modal. */}
+      {inspectedArtifact?.type === 'quiz' ? (
+        <StudyInspectorModal
+          artifact={inspectedArtifact}
+          topicId={activeTopic?.id}
+          courseId={currentCourse.id}
+          moduleId={selectedModuleId || undefined}
+          isCompleted={completedArtifactIds.includes(inspectedArtifact.id)}
+          onToggleCompleted={handleToggleArtifactCompleted}
+          onClose={() => setInspectedArtifact(null)}
+          onOpenFocusMode={(art) => {
+            setFocusArtifact(art);
+            setIsFocusModeOpen(true);
+          }}
+          onMasteryUpdated={() => setMasteryRevisionKey((k) => k + 1)}
+          onRegenerateLesson={handleRegenerateLesson}
+          isRegenerating={isRegeneratingLesson}
+        />
+      ) : inspectedArtifact ? (
+        <LearningContentWorkspace
+          artifact={inspectedArtifact}
+          courseTitle={currentCourse.name}
+          chapterTitle={activeModuleNode?.title}
+          topicTitle={activeTopic?.topicName}
+          isCompleted={completedArtifactIds.includes(inspectedArtifact.id)}
+          onToggleCompleted={handleToggleArtifactCompleted}
+          onClose={() => setInspectedArtifact(null)}
+          onOpenFocusMode={(art) => {
+            setFocusArtifact(art);
+            setIsFocusModeOpen(true);
+          }}
+          onRegenerateLesson={handleRegenerateLesson}
+          isRegenerating={isRegeneratingLesson}
+        />
+      ) : null}
 
       {/* Focus Mode Distraction-Free Study Modal */}
       <FocusModeModal

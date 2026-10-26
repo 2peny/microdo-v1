@@ -2,14 +2,27 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig, Plugin } from 'vite';
+import { SlidingWindowRateLimiter } from './requestRateLimiter.js';
 
 function summarizeApiPlugin(): Plugin {
   return {
     name: 'summarize-api-plugin',
     configureServer(server) {
+      const summarizeRateLimiter = new SlidingWindowRateLimiter(30, 15 * 60 * 1000);
       server.middlewares.use(async (req, res, next) => {
         const url = req.url ? req.url.split('?')[0] : '';
         if (url === '/api/summarize-module' && req.method === 'POST') {
+          const { allowed, retryAfterSeconds } = summarizeRateLimiter.check(
+            req.socket.remoteAddress || 'unknown'
+          );
+          if (!allowed) {
+            res.statusCode = 429;
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Retry-After', String(retryAfterSeconds));
+            res.end(JSON.stringify({ error: 'Too many requests. Please try again later.' }));
+            return;
+          }
+
           let body = '';
           req.on('data', (chunk) => {
             body += chunk;
@@ -181,44 +194,13 @@ ${rawText.slice(0, 40000)}
           return;
         }
 
-        // ==========================================
-        // Superuser / Owner Backend Admin API Routes
-        // ==========================================
-        if (url === '/api/admin/metrics' && req.method === 'GET') {
-          const mem = process.memoryUsage();
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({
-              status: 'operational',
-              serverUptimeSecs: Math.floor(process.uptime()),
-              memoryRssMb: Math.round(mem.rss / 1024 / 1024),
-              heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
-              geminiModel: 'gemini-2.5-flash',
-              environment: process.env.NODE_ENV || 'development',
-              timestamp: new Date().toISOString(),
-            })
-          );
+        if (url.startsWith('/api/admin/')) {
+          res.statusCode = 404;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Administrative API route not found.' }));
           return;
         }
 
-        if (url === '/api/admin/log-event' && req.method === 'POST') {
-          let body = '';
-          req.on('data', (chunk) => {
-            body += chunk;
-          });
-          req.on('end', () => {
-            try {
-              const payload = JSON.parse(body || '{}');
-              console.log(`[Superuser Audit Event] ${payload.action || 'EVENT'}: ${payload.details || ''}`);
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: true, loggedAt: new Date().toISOString() }));
-            } catch (err: any) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          });
-          return;
-        }
         next();
       });
     },

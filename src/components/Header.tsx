@@ -5,15 +5,11 @@ import {
   Layers,
   Flame,
   Crown,
-  LayoutDashboard,
   Target,
-  Wifi,
-  WifiOff,
   ChevronDown,
   User,
   LogOut,
   Sparkles,
-  BookOpen,
 } from 'lucide-react';
 import { StudyModuleNode, ScholarUser } from '../types';
 
@@ -29,6 +25,7 @@ interface HeaderProps {
   currentUser?: ScholarUser | null;
   onOpenAuth?: (mode?: 'login' | 'register') => void;
   onOpenSuperuser?: () => void;
+  onOpenGuardian?: () => void;
   currentView?: 'dashboard' | 'workspace';
   onViewChange?: (view: 'dashboard' | 'workspace') => void;
   onOpenStudyGoals?: () => void;
@@ -43,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenUploadModal,
   onResetFlow,
   onOpenSuperuser,
+  onOpenGuardian,
   currentView = 'workspace',
   onViewChange,
   onOpenStudyGoals,
@@ -128,7 +126,6 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
               title="Learner Dashboard"
             >
-              <LayoutDashboard className="w-3.5 h-3.5 text-indigo-600" />
               <span>Dashboard</span>
             </button>
             <button
@@ -140,7 +137,6 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
               title="Study Workspace"
             >
-              <BookOpen className="w-3.5 h-3.5 text-emerald-600" />
               <span>Study</span>
             </button>
           </nav>
@@ -151,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-3">
         {/* Network Sync Pill (Subtle, clean) */}
         <div
-          className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] text-xs font-medium border ${
+          className={`hidden lg:flex items-center px-2.5 py-1 rounded-[8px] text-xs font-medium border ${
             isOffline
               ? 'bg-amber-50 text-amber-800 border-amber-200'
               : 'bg-emerald-50/70 text-emerald-800 border-emerald-200/80'
@@ -160,14 +156,12 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {isOffline ? (
             <>
-              <WifiOff className="w-3.5 h-3.5 text-amber-600" />
               <span className="font-mono text-[11px]">
                 Offline {offlinePendingCount > 0 ? `(${offlinePendingCount})` : ''}
               </span>
             </>
           ) : (
             <>
-              <Wifi className="w-3.5 h-3.5 text-emerald-600" />
               <span className="text-[11px]">Synced</span>
             </>
           )}
@@ -256,7 +250,6 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
                     role="menuitem"
                   >
-                    <Target className="w-4 h-4 text-purple-600" />
                     <div className="flex flex-col">
                       <span className="font-medium">Study Goals & Schedule</span>
                       <span className="text-[10px] text-slate-400">Manage daily target & review cadence</span>
@@ -272,7 +265,6 @@ export const Header: React.FC<HeaderProps> = ({
                   className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors cursor-pointer"
                   role="menuitem"
                 >
-                  <RotateCcw className="w-4 h-4 text-slate-500" />
                   <div className="flex flex-col">
                     <span className="font-medium">Reset Selection</span>
                     <span className="text-[10px] text-slate-400">Return to root chapter overview</span>
@@ -281,6 +273,21 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
 
               {/* Owner / Superuser backend console link (if authorized or present) */}
+              {onOpenGuardian && (
+                <div className="py-1 border-t border-slate-100">
+                  <button
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      onOpenGuardian();
+                    }}
+                    className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-indigo-50/60 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    role="menuitem"
+                  >
+                    <span className="font-medium">Parent / Guardian workspace</span>
+                  </button>
+                </div>
+              )}
+
               {onOpenSuperuser && (
                 <div className="py-1 border-t border-slate-100">
                   <button
@@ -291,7 +298,6 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-amber-50/60 flex items-center gap-2.5 transition-colors cursor-pointer"
                     role="menuitem"
                   >
-                    <Crown className="w-4 h-4 text-amber-500" />
                     <div className="flex flex-col">
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium text-slate-900">Owner Backend</span>
@@ -318,7 +324,6 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full px-4 py-2 text-left text-xs text-indigo-700 hover:bg-indigo-50/60 flex items-center gap-2.5 transition-colors cursor-pointer font-medium"
                     role="menuitem"
                   >
-                    <User className="w-4 h-4 text-indigo-600" />
                     <span>{currentUser ? 'Scholar Passport & Account' : 'Sign In / Register'}</span>
                   </button>
                 </div>
@@ -330,4 +335,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-

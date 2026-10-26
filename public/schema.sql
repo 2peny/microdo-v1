@@ -1,7 +1,7 @@
 -- ============================================================================
 -- MicroDo Academic Study Platform - Database Schema
--- Compatible with: MySQL 5.7+, MySQL 8.0+, MariaDB 10.3+, PostgreSQL 12+, phpMyAdmin
--- Easy import: In phpMyAdmin, click "Import", select this file, and click "Go".
+-- MySQL/MariaDB schema reference only. This file is not the application's active
+-- persistence layer; inspect the deployed database before using any migration.
 -- ============================================================================
 
 -- 1. USERS & SCHOLAR PROFILES TABLE
@@ -105,14 +105,3 @@ CREATE TABLE IF NOT EXISTS `microdo_user_progress` (
   INDEX `idx_progress_user` (`user_id`),
   INDEX `idx_progress_artifact` (`artifact_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ============================================================================
--- SEED DATA (Ready-to-use scholars for immediate testing in phpMyAdmin)
--- Passwords below are sha256 hashes of 'microdo2026'
--- ============================================================================
-INSERT INTO `microdo_users` (`id`, `username`, `email`, `password_hash`, `full_name`, `archetype`, `avatar_emoji`, `major_focus`, `role`)
-VALUES
-  ('usr-001', 'ada.lovelace', 'ada@nodegrid.space', 'e10adc3949ba59abbe56e057f20f883e', 'Countess Ada Lovelace', 'caffeine_alchemist', '☕', 'Theoretical Computer Science', 'scholar'),
-  ('usr-002', 'alan.turing', 'alan@nodegrid.space', 'e10adc3949ba59abbe56e057f20f883e', 'Dr. Alan Turing', 'formula_crafter', '📐', 'Cryptography & Machine Intelligence', 'instructor'),
-  ('usr-003', 'curious.fresher', 'fresher@nodegrid.space', 'e10adc3949ba59abbe56e057f20f883e', 'Curious Scholar', 'midnight_owl', '🦉', 'Applied Sciences & Systems', 'scholar')
-ON DUPLICATE KEY UPDATE `updated_at` = CURRENT_TIMESTAMP;

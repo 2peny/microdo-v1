@@ -140,7 +140,10 @@ export type ScholarUserRole =
   | 'admin' 
   | 'instructor' 
   | 'scholar' 
-  | 'auditor';
+  | 'auditor'
+  | 'guardian';
+
+export type PlatformRole = 'SUPER_ADMIN' | 'LEARNER' | 'PARENT_GUARDIAN';
 
 export interface UserPermissions {
   canUploadModules: boolean;
@@ -162,6 +165,7 @@ export interface ScholarUser {
   majorOrFocus: string;
   joinedAt: string;
   role: ScholarUserRole;
+  roles?: PlatformRole[];
   status?: 'active' | 'suspended' | 'pending';
   lastActive?: string;
   modulesUploadedCount?: number;
@@ -299,4 +303,3 @@ export interface ProcessingJob {
   detectedChaptersCount: number;
   costEstimate: number; // in USD based on model tokens
 }
-

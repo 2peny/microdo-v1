@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
+import { SlidingWindowRateLimiter } from './requestRateLimiter.js';
 
 dotenv.config();
 
@@ -28,6 +29,20 @@ const PORT = cliPort || (process.env.PORT ? parseInt(process.env.PORT, 10) : 300
 const HOST = cliHost || process.env.HOST || '0.0.0.0';
 
 const app = express();
+
+const summarizeRateLimiter = new SlidingWindowRateLimiter(30, 15 * 60 * 1000);
+app.use('/api/summarize-module', (req, res, next) => {
+  if (req.method !== 'POST') return next();
+
+  const { allowed, retryAfterSeconds } = summarizeRateLimiter.check(
+    req.socket.remoteAddress || 'unknown'
+  );
+  if (!allowed) {
+    res.setHeader('Retry-After', String(retryAfterSeconds));
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+  next();
+});
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static('public'));
