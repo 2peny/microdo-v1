@@ -1,4 +1,5 @@
 import { recordAnalyticsEvent } from './analyticsEngine';
+import { getUserStorageItem, removeUserStorageItem, setUserStorageItem } from './userStorage';
 
 const STORAGE_KEY_OFFLINE_QUEUE = 'microdo_offline_queue';
 
@@ -11,7 +12,7 @@ export interface OfflineAction {
 
 export function getOfflineActionQueue(): OfflineAction[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_OFFLINE_QUEUE);
+    const raw = getUserStorageItem(STORAGE_KEY_OFFLINE_QUEUE);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -30,7 +31,7 @@ export function queueOfflineAction(type: OfflineAction['type'], payload: any): v
   };
   queue.push(action);
   try {
-    localStorage.setItem(STORAGE_KEY_OFFLINE_QUEUE, JSON.stringify(queue));
+    setUserStorageItem(STORAGE_KEY_OFFLINE_QUEUE, JSON.stringify(queue));
   } catch {
     // Ignore error
   }
@@ -38,7 +39,7 @@ export function queueOfflineAction(type: OfflineAction['type'], payload: any): v
 
 export function clearOfflineActionQueue(): void {
   try {
-    localStorage.removeItem(STORAGE_KEY_OFFLINE_QUEUE);
+    removeUserStorageItem(STORAGE_KEY_OFFLINE_QUEUE);
   } catch {
     // Ignore error
   }

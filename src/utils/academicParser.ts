@@ -6,8 +6,6 @@
  */
 
 import { StudyModuleNode, StudyTopic, StudyArtifact, SourceReference } from '../types';
-import { buildCK12AlgebraCurriculum } from '../data/ck12AlgebraCurriculum';
-import { buildCloudComputingCurriculum } from '../data/cloudComputingCurriculum';
 import {
   distillTopicIntoStructuredLesson,
   compileStructuredLessonToMarkdown,
@@ -1144,68 +1142,6 @@ export function extractBookOrModuleCurriculum(
 
   const detectedBookTitle = detectTitle(textToAnalyze, userTitle);
   const detectedCode = detectCourseCode(textToAnalyze, userCode);
-
-  // Check if this material is Cloud Computing Digital Notes / Computer Science
-  const isCloudComputing =
-    /cloud\s*computing/i.test(textToAnalyze) ||
-    /notes\s*on\s*cloud/i.test(textToAnalyze) ||
-    /cloud\s*infrastructure/i.test(textToAnalyze) ||
-    /cloud\s*computing/i.test(userTitle || '') ||
-    /cloud/i.test(userTitle || '') ||
-    textToAnalyze.includes('Computing Paradigms') ||
-    textToAnalyze.includes('Virtual machines provisioning') ||
-    textToAnalyze.includes('SLA Management in cloud') ||
-    textToAnalyze.includes('Mr E Mlambo');
-
-  if (isCloudComputing) {
-    const cloudModules = buildCloudComputingCurriculum();
-    return {
-      isBook: true,
-      totalChapters: 5,
-      bookTitle: userTitle || 'Notes on Cloud Computing Infrastructure',
-      discipline: 'Computer Science Curriculum',
-      modules: cloudModules,
-    };
-  }
-
-  // Check if this material is CK-12 Algebra I or foundations of algebra
-  const isCK12Algebra =
-    /ck[- ]?12/i.test(textToAnalyze) ||
-    /(?:algebra\s*i\b|algebra\s*1\b)/i.test(textToAnalyze) ||
-    /1[-_]ck[-_]12/i.test(textToAnalyze) ||
-    /ck[- ]?12/i.test(userTitle || '') ||
-    /(?:algebra\s*i\b|algebra\s*1\b)/i.test(userTitle || '') ||
-    (textToAnalyze.includes('Variable Expression') && textToAnalyze.includes('Rectangle Perimeter'));
-
-  if (isCK12Algebra) {
-    let userOverview: string | undefined;
-    let userExamples: string | undefined;
-
-    // Only allow verified structured user markdown overrides that are NOT raw dumped PDF text
-    if (
-      (textToAnalyze.includes('## Key Overview') || textToAnalyze.includes('### 🎯 Learning Objectives')) &&
-      !isRawOrCorruptedLesson(textToAnalyze)
-    ) {
-      const parts = textToAnalyze.split(/(?=##\s+Worked\s+Examples)/i);
-      userOverview = parts[0].trim();
-      if (parts.length > 1) {
-        userExamples = parts.slice(1).join('\n\n').trim();
-      }
-    }
-
-    const ck12Modules = buildCK12AlgebraCurriculum({
-      overview: userOverview,
-      examples: userExamples,
-    });
-
-    return {
-      isBook: true,
-      totalChapters: 13,
-      bookTitle: userTitle || 'CK-12 Algebra I',
-      discipline: 'Mathematics Curriculum',
-      modules: ck12Modules,
-    };
-  }
 
   // Check for chapter boundaries
   const detectedChapters = detectChaptersInText(textToAnalyze);

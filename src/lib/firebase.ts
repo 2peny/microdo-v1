@@ -292,7 +292,24 @@ export async function registerWithFirebase(params: {
 export async function loginWithFirebase(identifier: string, password: string): Promise<ScholarUser> {
   const email = identifier.trim().toLowerCase();
   const credential = await signInWithEmailAndPassword(auth, email, password);
-  return await fetchScholarUserProfile(credential.user);
+  try {
+    return await fetchScholarUserProfile(credential.user);
+  } catch (error) {
+    const isMissingProfile = typeof error === 'object' && error && 'code' in error &&
+      error.code === 'profile-not-found';
+    if (!isMissingProfile) throw error;
+
+    const emailName = credential.user.email?.split('@')[0] || 'learner';
+    const username = emailName.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 50) ||
+      `user-${credential.user.uid.slice(0, 8)}`;
+    return createUserProfile(credential.user, {
+      fullName: credential.user.displayName?.trim() || emailName,
+      username,
+      archetype: 'midnight_owl',
+      majorOrFocus: 'General Studies',
+      role: 'scholar',
+    });
+  }
 }
 
 // Sign in with Google Popup
@@ -383,6 +400,7 @@ export function onScholarAuthStateChanged(callback: (user: ScholarUser | null) =
         if (!isAwaitingGoogleProfile && auth.currentUser?.uid === firebaseUser.uid) {
           console.error('Authenticated account profile could not be loaded.', error);
         }
+        if (auth.currentUser?.uid === firebaseUser.uid) callback(null);
       }
     } else {
       callback(null);

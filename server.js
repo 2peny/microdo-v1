@@ -253,7 +253,7 @@ async function handleUnloadModule(req, res) {
     const { moduleId, title } = await parseRequestBody(req);
     return sendJson(req, res, 200, {
       success: true,
-      message: `Module "${title || moduleId}" unloaded successfully. Server memory and storage freed.`,
+      message: `Workspace unload request accepted for "${title || moduleId}". This server does not persist learner workspace data.`,
       purgedAt: new Date().toISOString(),
     });
   } catch (error) {

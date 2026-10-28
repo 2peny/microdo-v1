@@ -246,7 +246,7 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
             <div>
               <h2 className="text-lg font-semibold">Platform accounts</h2>
               <p className="mt-1 max-w-2xl text-sm text-slate-400">
-                Counts below come from Firebase user profiles visible to this administrator. Learning activity and document-processing metrics are unavailable because those records are not stored in the shared backend.
+                Every count is read live from Firestore collections: <code>users</code>, <code>guardianLinks</code>, and <code>adminAuditEvents</code>. Firebase Authentication accounts without a Firestore profile cannot be listed from this browser. No sample accounts, seeded metrics, or generated records are shown.
               </p>
               <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Metric label="User profiles" value={users.length} icon={<Users className="h-4 w-4" />} />
@@ -330,7 +330,7 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
                     </article>
                   );
                 })}
-                {!visibleUsers.length && !loading && <p className="text-sm text-slate-400">No matching accounts.</p>}
+                {!visibleUsers.length && !loading && <p className="text-sm text-slate-400">No Firestore user profiles match this search.</p>}
               </div>
             </div>
           )}

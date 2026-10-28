@@ -61,7 +61,7 @@ export const UnloadConfirmModal: React.FC<UnloadConfirmModalProps> = ({
                   Unload Module & Document
                 </h3>
                 <p className="text-[11px] text-slate-500 font-mono">
-                  Purge from workspace and server memory
+                  Remove from your private workspace
                 </p>
               </div>
             </div>
@@ -117,13 +117,13 @@ export const UnloadConfirmModal: React.FC<UnloadConfirmModalProps> = ({
               </div>
             </div>
 
-            {/* Server Memory explanation */}
+            {/* Workspace data explanation */}
             <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200/80 text-amber-900 text-xs flex gap-2.5 items-start">
               <HardDrive className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <span className="font-semibold block">Prevents Server Storage Full</span>
+                <span className="font-semibold block">Keeps this workspace focused</span>
                 <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Unloading immediately releases the document text, parsed memory buffers, and cached study materials so server resources remain clean and responsive.
+                  This removes the module and its current completion markers from your private browser workspace. It does not affect another user’s workspace or learning history.
                 </p>
               </div>
             </div>

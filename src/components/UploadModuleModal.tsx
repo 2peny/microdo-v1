@@ -139,61 +139,6 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
       });
     }
 
-    // Check if Cloud Computing Digital Notes / Computer Science
-    if (
-      /cloud\s*computing/i.test(activeContent) ||
-      /notes\s*on\s*cloud/i.test(activeContent) ||
-      /cloud\s*computing/i.test(uploadedFileName) ||
-      /cloud/i.test(uploadedFileName) ||
-      /cloud/i.test(courseTitle)
-    ) {
-      const units = [
-        'Cloud Computing Fundamentals & Computing Paradigms',
-        'Migrating into a Cloud & The Seven-Step Model',
-        'Infrastructure as a Service (IaaS) & Platform (PaaS)',
-        'Software as a Service (SaaS) & Data Security in the Cloud',
-        'SLA Management & Service Level Agreements in Cloud',
-      ];
-      return units.map((u, idx) => ({
-        id: `ch-cloud-${idx + 1}`,
-        chapterNumber: idx + 1,
-        chapterHeading: `Unit ${idx + 1}`,
-        chapterTitle: u,
-        body: '',
-      }));
-    }
-
-    // Check if CK-12 Algebra I
-    if (
-      /ck[- ]?12|algebra\s*i\b|1[-_]ck[-_]12/i.test(activeContent) ||
-      /ck[- ]?12|algebra/i.test(uploadedFileName) ||
-      /algebra/i.test(courseTitle) ||
-      (activeContent.includes('Variable Expression') && activeContent.includes('Rectangle Perimeter'))
-    ) {
-      const titles = [
-        'Equations & Functions Overview',
-        'Real Numbers & Operations',
-        'Linear Equations & Problem Solving',
-        'Graphing Linear Equations & Functions',
-        'Writing Linear Equations',
-        'Linear Inequalities & Absolute Value',
-        'Systems of Equations & Inequalities',
-        'Exponential Functions & Exponent Rules',
-        'Polynomials & Factoring',
-        'Quadratic Equations & Functions',
-        'Algebra & Geometry Connections',
-        'Rational Equations & Functions',
-        'Probability, Statistics & Review',
-      ];
-      return titles.map((t, idx) => ({
-        id: `ch-ck12-${idx + 1}`,
-        chapterNumber: idx + 1,
-        chapterHeading: `Chapter ${idx + 1}`,
-        chapterTitle: t,
-        body: '',
-      }));
-    }
-
     if (!activeContent || activeContent.length < 40) return [];
 
     const sanitized = sanitizeAcademicText(activeContent);
@@ -303,10 +248,6 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
             content.match(/^(?:Book|Title|Module|Lecture|Chapter)\s*[:\-–—]\s*(.+)$/im);
           if (headingMatch && headingMatch[1].trim().length > 3) {
             setCourseTitle(cleanTitle(headingMatch[1].trim()));
-          } else if (/cloud/i.test(file.name)) {
-            setCourseTitle('Notes on Cloud Computing Infrastructure');
-          } else if (/algebra/i.test(file.name)) {
-            setCourseTitle('CK-12 Algebra I');
           } else {
             setCourseTitle(cleanTitle(file.name));
           }
@@ -316,10 +257,6 @@ export const UploadModuleModal: React.FC<UploadModuleModalProps> = ({
           const codeMatch = content.match(/\b([A-Z]{2,5}[ -]?\d{2,4}[A-Z]?)\b/);
           if (codeMatch) {
             setCourseCode(codeMatch[1]);
-          } else if (/cloud/i.test(file.name) || /cloud/i.test(content)) {
-            setCourseCode('CS-401');
-          } else if (/algebra/i.test(file.name) || /algebra/i.test(content)) {
-            setCourseCode('MATH-ALG1');
           }
         }
       } else {

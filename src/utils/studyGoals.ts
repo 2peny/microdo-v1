@@ -1,4 +1,5 @@
 import { StudyGoals } from '../types';
+import { getUserStorageItem, setUserStorageItem } from './userStorage';
 
 const STORAGE_KEY_GOALS = 'microdo_study_goals';
 const STORAGE_KEY_STUDIED_DATES = 'microdo_studied_dates';
@@ -13,7 +14,7 @@ export const DEFAULT_STUDY_GOALS: StudyGoals = {
 
 export function getStudyGoals(): StudyGoals {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_GOALS);
+    const raw = getUserStorageItem(STORAGE_KEY_GOALS);
     if (!raw) return DEFAULT_STUDY_GOALS;
     const parsed = JSON.parse(raw);
     return {
@@ -34,7 +35,7 @@ export function saveStudyGoals(goals: Partial<StudyGoals>): StudyGoals {
     ...goals,
   };
   try {
-    localStorage.setItem(STORAGE_KEY_GOALS, JSON.stringify(updated));
+    setUserStorageItem(STORAGE_KEY_GOALS, JSON.stringify(updated));
   } catch {
     // Graceful fallback
   }
@@ -44,11 +45,11 @@ export function saveStudyGoals(goals: Partial<StudyGoals>): StudyGoals {
 export function recordStudyDay(): void {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const raw = localStorage.getItem(STORAGE_KEY_STUDIED_DATES);
+    const raw = getUserStorageItem(STORAGE_KEY_STUDIED_DATES);
     const dates: string[] = raw ? JSON.parse(raw) : [];
     if (!dates.includes(today)) {
       dates.push(today);
-      localStorage.setItem(STORAGE_KEY_STUDIED_DATES, JSON.stringify(dates.slice(-60)));
+      setUserStorageItem(STORAGE_KEY_STUDIED_DATES, JSON.stringify(dates.slice(-60)));
     }
   } catch {
     // Graceful fallback
@@ -57,7 +58,7 @@ export function recordStudyDay(): void {
 
 function getDaysStudiedThisWeek(): number {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_STUDIED_DATES);
+    const raw = getUserStorageItem(STORAGE_KEY_STUDIED_DATES);
     if (!raw) return 0;
     const dates: string[] = JSON.parse(raw);
     const now = new Date();
@@ -75,7 +76,7 @@ function getDaysStudiedThisWeek(): number {
 
 function getLessonsCompletedThisWeek(): number {
   try {
-    const raw = localStorage.getItem('microdo_completed_artifacts');
+    const raw = getUserStorageItem('microdo_completed_artifacts');
     if (!raw) return 0;
     const artifacts: string[] = JSON.parse(raw);
     return artifacts.length;

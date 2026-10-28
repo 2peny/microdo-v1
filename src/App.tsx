@@ -27,10 +27,18 @@ import { GuardianWorkspace } from './components/GuardianWorkspace';
 import { GuardianConsent } from './components/GuardianConsent';
 import { FocusModeModal } from './components/FocusModeModal';
 import { StudyGoalsModal } from './components/StudyGoalsModal';
-import { getStoredUser, saveStoredUser } from './utils/authStorage';
+import { LandingPage } from './components/LandingPage';
+import { saveStoredUser } from './utils/authStorage';
 import { onScholarAuthStateChanged, signOutScholar, validateFirestoreConnection } from './lib/firebase';
-import { recordAnalyticsEvent, removeSeededBrowserAnalyticsData } from './utils/analyticsEngine';
+import { clearLegacyBrowserTelemetry, recordAnalyticsEvent } from './utils/analyticsEngine';
 import { processOfflineQueue, getOfflineQueue } from './utils/offlineSync';
+import {
+  clearLegacyUnscopedStorage,
+  getUserStorageItem,
+  removeUserStorageItem,
+  setActiveStorageUser,
+  setUserStorageItem,
+} from './utils/userStorage';
 import {
   distillTopicIntoStructuredLesson,
   compileStructuredLessonToMarkdown,
@@ -104,16 +112,16 @@ function sanitizeExistingCourses(loadedCourses: StudyDirectoryCourse[]): {
 export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
-  // Start with clean empty state when user starts using the system (or restored & auto-healed from localStorage)
+  // Workspace data is only rendered after Firebase confirms a signed-in account.
   const [courses, setCourses] = useState<StudyDirectoryCourse[]>(() => {
     try {
-      const saved = localStorage.getItem('microdo_courses');
+      const saved = getUserStorageItem('microdo_courses');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // If the cached course is the dummy sample course, clean it for a production-ready workspace
+          // Remove a legacy demo workspace if it remains in a browser from an older release.
           if (parsed[0]?.id === 'cs-systems') {
-            localStorage.removeItem('microdo_courses');
+            removeUserStorageItem('microdo_courses');
             return [EMPTY_STUDY_COURSE];
           }
 
@@ -121,7 +129,7 @@ export default function App() {
           const { courses: healedCourses, repaired } = sanitizeExistingCourses(parsed);
           if (repaired) {
             try {
-              localStorage.setItem('microdo_courses', JSON.stringify(healedCourses));
+              setUserStorageItem('microdo_courses', JSON.stringify(healedCourses));
             } catch {
               // Safe fallback
             }
@@ -154,7 +162,7 @@ export default function App() {
   // Completed Artifacts Progress State (persisted to localStorage)
   const [completedArtifactIds, setCompletedArtifactIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('microdo_completed_artifacts');
+      const saved = getUserStorageItem('microdo_completed_artifacts');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -167,7 +175,7 @@ export default function App() {
   // Continue Learning Position (persisted for multi-session resumption)
   const [lastPosition, setLastPosition] = useState<ContinueLearningPosition | null>(() => {
     try {
-      const saved = localStorage.getItem('microdo_continue_position');
+      const saved = getUserStorageItem('microdo_continue_position');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -202,7 +210,7 @@ export default function App() {
     };
     setLastPosition(pos);
     try {
-      localStorage.setItem('microdo_continue_position', JSON.stringify(pos));
+      setUserStorageItem('microdo_continue_position', JSON.stringify(pos));
     } catch {
       // Safe fallback
     }
@@ -215,7 +223,7 @@ export default function App() {
         ? [...prev, artifactId]
         : prev.filter((id) => id !== artifactId);
       try {
-        localStorage.setItem('microdo_completed_artifacts', JSON.stringify(next));
+        setUserStorageItem('microdo_completed_artifacts', JSON.stringify(next));
       } catch {
         // Safe localStorage write fallback
       }
@@ -241,7 +249,8 @@ export default function App() {
   const [focusArtifact, setFocusArtifact] = useState<StudyArtifact | null>(null);
   const [masteryRevisionKey, setMasteryRevisionKey] = useState(0);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [currentUser, setCurrentUser] = useState<ScholarUser | null>(() => getStoredUser());
+  const [currentUser, setCurrentUser] = useState<ScholarUser | null>(null);
+  const [isAuthResolved, setIsAuthResolved] = useState(false);
   const [currentWorkspace, setCurrentWorkspace] = useState<'learner' | 'guardian'>('learner');
   const [guardianConsentRequestId, setGuardianConsentRequestId] = useState<string | null>(
     () => new URLSearchParams(window.location.search).get('guardian-consent')
@@ -253,8 +262,72 @@ export default function App() {
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
   const [offlinePendingCount, setOfflinePendingCount] = useState<number>(0);
 
+  const loadWorkspaceForUser = (userId: string) => {
+    setActiveStorageUser(userId);
+
+    try {
+      const savedCourses = getUserStorageItem('microdo_courses');
+      const parsedCourses = savedCourses ? JSON.parse(savedCourses) : null;
+      if (Array.isArray(parsedCourses) && parsedCourses.length > 0) {
+        const { courses: healedCourses, repaired } = sanitizeExistingCourses(parsedCourses);
+        setCourses(healedCourses);
+        if (repaired) setUserStorageItem('microdo_courses', JSON.stringify(healedCourses));
+      } else {
+        setCourses([EMPTY_STUDY_COURSE]);
+      }
+    } catch {
+      setCourses([EMPTY_STUDY_COURSE]);
+    }
+
+    try {
+      const savedCompletedArtifacts = getUserStorageItem('microdo_completed_artifacts');
+      const parsedCompletedArtifacts = savedCompletedArtifacts ? JSON.parse(savedCompletedArtifacts) : [];
+      setCompletedArtifactIds(Array.isArray(parsedCompletedArtifacts) ? parsedCompletedArtifacts : []);
+    } catch {
+      setCompletedArtifactIds([]);
+    }
+
+    try {
+      const savedPosition = getUserStorageItem('microdo_continue_position');
+      setLastPosition(savedPosition ? JSON.parse(savedPosition) : null);
+    } catch {
+      setLastPosition(null);
+    }
+
+    setSelectedModuleId(null);
+    setActiveTopicId(null);
+    setInspectedArtifact(null);
+    setFocusArtifact(null);
+    setCurrentView('dashboard');
+    setOfflinePendingCount(getOfflineQueue().length);
+  };
+
+  const resetSignedOutWorkspace = () => {
+    setActiveStorageUser(null);
+    saveStoredUser(null);
+    setCurrentUser(null);
+    setCurrentWorkspace('learner');
+    setVerifiedAdminId(null);
+    setCourses([EMPTY_STUDY_COURSE]);
+    setCompletedArtifactIds([]);
+    setLastPosition(null);
+    setSelectedModuleId(null);
+    setActiveTopicId(null);
+    setInspectedArtifact(null);
+    setFocusArtifact(null);
+    setSearchQuery('');
+    setCurrentView('workspace');
+    setIsUploadModalOpen(false);
+    setIsFaqOpen(false);
+    setIsGoalsModalOpen(false);
+    setIsFocusModeOpen(false);
+    setGuardianConsentRequestId(null);
+    setOfflinePendingCount(0);
+  };
+
   useEffect(() => {
-    removeSeededBrowserAnalyticsData();
+    clearLegacyUnscopedStorage();
+    clearLegacyBrowserTelemetry();
 
     const handleOnline = () => {
       setIsOffline(false);
@@ -285,6 +358,7 @@ export default function App() {
     // Listen to real Firebase auth changes across sessions
     const unsubscribe = onScholarAuthStateChanged((user) => {
       if (user) {
+        loadWorkspaceForUser(user.id);
         const isAdmin = user.role === 'admin';
         setVerifiedAdminId(isAdmin ? user.id : null);
         setCurrentUser(user);
@@ -297,20 +371,21 @@ export default function App() {
             : 'learner'
         );
       } else {
-        setVerifiedAdminId(null);
-        setCurrentWorkspace('learner');
-        setCurrentUser((previous) => {
-          if (previous?.id.startsWith('local-')) return previous;
-          saveStoredUser(null);
-          return null;
-        });
+        resetSignedOutWorkspace();
       }
+      setIsAuthResolved(true);
     });
 
     return () => unsubscribe();
   }, []);
 
   const handleLoginSuccess = (user: ScholarUser | null) => {
+    if (!user) {
+      resetSignedOutWorkspace();
+      navigate('/');
+      return;
+    }
+    loadWorkspaceForUser(user.id);
     setCurrentUser(user);
     saveStoredUser(user);
     const isAdmin = user?.role === 'admin';
@@ -329,10 +404,7 @@ export default function App() {
 
   const handleSignOut = async () => {
     await signOutScholar();
-    saveStoredUser(null);
-    setCurrentUser(null);
-    setCurrentWorkspace('learner');
-    setVerifiedAdminId(null);
+    resetSignedOutWorkspace();
     navigate('/');
   };
 
@@ -355,35 +427,50 @@ export default function App() {
     : null;
 
 
-  // Reset to Clean Empty State
-  const handleClearToEmptyState = () => {
-    setCourses([EMPTY_STUDY_COURSE]);
-    setSelectedModuleId(null);
-    setActiveTopicId(null);
-    setCompletedArtifactIds([]);
+  // Reset the active workspace only; completed work and mastery history remain in this user's private storage.
+  const handleClearToEmptyState = async () => {
+    if (!currentUser) return;
+    setIsUnloading(true);
     try {
-      localStorage.setItem('microdo_courses', JSON.stringify([EMPTY_STUDY_COURSE]));
-      localStorage.removeItem('microdo_completed_artifacts');
-    } catch {
-      // Safe fallback
-    }
-
-    try {
-      fetch('/api/unload-module', {
+      const response = await fetch('/api/unload-module', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ moduleId: 'all', title: 'All Modules' }),
       });
-    } catch {
-      // Safe fallback
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || 'The server could not clear the active workspace.');
+      }
+
+      setCourses([EMPTY_STUDY_COURSE]);
+      setSelectedModuleId(null);
+      setActiveTopicId(null);
+      setInspectedArtifact(null);
+      setFocusArtifact(null);
+      setLastPosition(null);
+      setCurrentView('workspace');
+      setUserStorageItem('microdo_courses', JSON.stringify([EMPTY_STUDY_COURSE]));
+      removeUserStorageItem('microdo_continue_position');
+
+      setUnloadToast({
+        message: 'Workspace Cleared',
+        sub: 'Active modules were removed. Your learning history is retained privately.',
+      });
+    } catch (error) {
+      setUnloadToast({
+        message: 'Workspace Reset Failed',
+        sub: error instanceof Error ? error.message : 'Please try again.',
+      });
+    } finally {
+      setIsUnloading(false);
     }
 
-    setUnloadToast({
-      message: 'Workspace Cleared',
-      sub: 'All modules unloaded and server memory purged.',
-    });
     setTimeout(() => {
-      setUnloadToast((curr) => (curr?.message === 'Workspace Cleared' ? null : curr));
+      setUnloadToast((curr) =>
+        curr?.message === 'Workspace Cleared' || curr?.message === 'Workspace Reset Failed'
+          ? null
+          : curr
+      );
     }, 4000);
   };
 
@@ -458,7 +545,7 @@ export default function App() {
       setActiveTopicId(null);
     }
     try {
-      localStorage.setItem('microdo_courses', JSON.stringify(updatedCourses));
+      setUserStorageItem('microdo_courses', JSON.stringify(updatedCourses));
     } catch {
       // Safe fallback
     }
@@ -520,8 +607,8 @@ export default function App() {
 
     // 4. Update localStorage
     try {
-      localStorage.setItem('microdo_courses', JSON.stringify(updatedCourses));
-      localStorage.setItem(
+      setUserStorageItem('microdo_courses', JSON.stringify(updatedCourses));
+      setUserStorageItem(
         'microdo_completed_artifacts',
         JSON.stringify(updatedCompletedIds)
       );
@@ -544,7 +631,7 @@ export default function App() {
     setModuleToUnload(null);
     setUnloadToast({
       message: `Unloaded "${modTitle}"`,
-      sub: 'Document parsed data purged & server memory freed.',
+        sub: 'The module was removed from your private workspace.',
     });
 
     setTimeout(() => {
@@ -644,7 +731,7 @@ export default function App() {
       }
 
       try {
-        localStorage.setItem('microdo_courses', JSON.stringify(updatedCourses));
+        setUserStorageItem('microdo_courses', JSON.stringify(updatedCourses));
       } catch {
         // Safe fallback
       }
@@ -710,6 +797,32 @@ export default function App() {
     setActiveTopicId(next.topicId);
     setInspectedArtifact(next.artifact);
   };
+
+  if (!isAuthResolved) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-slate-100">
+        <p className="text-sm text-slate-400">Checking your secure session…</p>
+      </main>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <>
+        <LandingPage
+          onSignIn={() => handleOpenAuth('login')}
+          onCreateAccount={() => handleOpenAuth('register')}
+        />
+        <AuthOverlay
+          isOpen={isAuthOpen}
+          onClose={() => setIsAuthOpen(false)}
+          currentUser={null}
+          onLoginSuccess={handleLoginSuccess}
+          initialMode={authMode}
+        />
+      </>
+    );
+  }
 
   if (location.pathname === '/owner') {
     if (!canOpenSuperuser) {

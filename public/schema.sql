@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS `microdo_courses` (
   `discipline` VARCHAR(128) NOT NULL DEFAULT 'Computer Science',
   `quote` TEXT NULL,
   `subquote` VARCHAR(255) NULL,
-  `is_sample` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   INDEX `idx_course_user` (`user_id`)

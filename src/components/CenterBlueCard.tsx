@@ -46,7 +46,7 @@ export const CenterBlueCard: React.FC<CenterBlueCardProps> = ({
             <button
               type="button"
               onClick={() => onRequestUnload(moduleNode)}
-              title="Unload module & purge document from server memory"
+              title="Remove this module from your private workspace"
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3 h-3 text-slate-400 hover:text-red-500" />

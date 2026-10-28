@@ -3,41 +3,30 @@ import {
   AnalyticsEventType,
   ProcessingJob,
 } from '../types';
+import { getUserStorageItem, removeUserStorageItem, setUserStorageItem } from './userStorage';
 
 const STORAGE_KEY_EVENTS = 'microdo_analytics_events';
 const STORAGE_KEY_JOBS = 'microdo_processing_jobs';
-const SEEDED_EVENT_IDS = new Set([
-  'ev-01',
-  'ev-02',
-  'ev-03',
-  'ev-04',
-  'ev-05',
-  'ev-06',
-  'ev-07',
-  'ev-08',
-  'ev-09',
-]);
-const SEEDED_USER_IDS = new Set(['usr-prof-vance', 'usr-scholar-marcus', 'usr-scholar-liam']);
-const SEEDED_JOB_IDS = new Set(['job-01', 'job-02', 'job-03']);
+const LEGACY_TELEMETRY_CLEARED_KEY = 'microdo_legacy_telemetry_cleared_v1';
 
-export function removeSeededBrowserAnalyticsData(): void {
-  getStoredAnalyticsEvents();
-  getStoredProcessingJobs();
+export function clearLegacyBrowserTelemetry(): void {
+  try {
+    if (localStorage.getItem(LEGACY_TELEMETRY_CLEARED_KEY)) return;
+    localStorage.removeItem(STORAGE_KEY_EVENTS);
+    localStorage.removeItem(STORAGE_KEY_JOBS);
+    localStorage.setItem(LEGACY_TELEMETRY_CLEARED_KEY, 'true');
+  } catch {
+    // Local telemetry is optional and must never block the signed-in experience.
+  }
 }
 
 export function getStoredAnalyticsEvents(): AnalyticsEvent[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_EVENTS);
+    const raw = getUserStorageItem(STORAGE_KEY_EVENTS);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    const events = parsed.filter(
-      (event) => !SEEDED_EVENT_IDS.has(event?.id) && !SEEDED_USER_IDS.has(event?.userId)
-    );
-    if (events.length !== parsed.length) {
-      localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(events));
-    }
-    return events;
+    return parsed;
   } catch {
     return [];
   }
@@ -45,7 +34,7 @@ export function getStoredAnalyticsEvents(): AnalyticsEvent[] {
 
 export function saveStoredAnalyticsEvents(events: AnalyticsEvent[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(events));
+    setUserStorageItem(STORAGE_KEY_EVENTS, JSON.stringify(events));
   } catch {
     // Ignore error
   }
@@ -98,15 +87,11 @@ export function recordAnalyticsEvent(
 
 export function getStoredProcessingJobs(): ProcessingJob[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_JOBS);
+    const raw = getUserStorageItem(STORAGE_KEY_JOBS);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    const jobs = parsed.filter((job) => !SEEDED_JOB_IDS.has(job?.id));
-    if (jobs.length !== parsed.length) {
-      localStorage.setItem(STORAGE_KEY_JOBS, JSON.stringify(jobs));
-    }
-    return jobs;
+    return parsed;
   } catch {
     return [];
   }
@@ -124,7 +109,7 @@ export function recordProcessingJob(
 
   const updated = [newJob, ...jobs.slice(0, 50)];
   try {
-    localStorage.setItem(STORAGE_KEY_JOBS, JSON.stringify(updated));
+    setUserStorageItem(STORAGE_KEY_JOBS, JSON.stringify(updated));
   } catch {
     // Ignore error
   }

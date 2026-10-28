@@ -177,12 +177,12 @@ ${rawText.slice(0, 40000)}
           req.on('end', () => {
             try {
               const { moduleId, title } = JSON.parse(body || '{}');
-              console.log(`[Unload API] Module unloaded and document memory purged: ${moduleId} (${title || 'unnamed'})`);
+              console.log(`[Unload API] Workspace unload request accepted: ${moduleId} (${title || 'unnamed'})`);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(
                 JSON.stringify({
                   success: true,
-                  message: `Module "${title || moduleId}" unloaded successfully. Server memory and storage freed.`,
+                  message: `Workspace unload request accepted for "${title || moduleId}". This development server does not persist learner workspace data.`,
                   purgedAt: new Date().toISOString(),
                 })
               );

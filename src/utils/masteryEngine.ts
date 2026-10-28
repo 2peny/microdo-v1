@@ -5,6 +5,7 @@ import {
   StudyDirectoryCourse,
 } from '../types';
 import { recordAnalyticsEvent } from './analyticsEngine';
+import { getUserStorageItem, setUserStorageItem } from './userStorage';
 
 const STORAGE_KEY_MASTERY = 'microdo_topic_mastery';
 
@@ -64,7 +65,7 @@ export const MASTERY_COLORS: Record<
 
 export function getAllMasteryRecords(): Record<string, TopicMasteryRecord> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_MASTERY);
+    const raw = getUserStorageItem(STORAGE_KEY_MASTERY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     return typeof parsed === 'object' && parsed !== null ? parsed : {};
@@ -75,7 +76,7 @@ export function getAllMasteryRecords(): Record<string, TopicMasteryRecord> {
 
 export function saveAllMasteryRecords(records: Record<string, TopicMasteryRecord>): void {
   try {
-    localStorage.setItem(STORAGE_KEY_MASTERY, JSON.stringify(records));
+    setUserStorageItem(STORAGE_KEY_MASTERY, JSON.stringify(records));
   } catch {
     // Graceful fallback
   }
