@@ -10,7 +10,6 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   updateProfile,
-  deleteUser,
   User as FirebaseUser,
 } from 'firebase/auth';
 import {
@@ -279,12 +278,23 @@ export async function registerWithFirebase(params: {
       role: params.role || 'scholar',
     });
   } catch (err) {
-    try {
-      await deleteUser(user);
-    } catch {
-      console.error('Failed to clean up a newly created account after profile provisioning failed.');
-    }
-    throw err;
+    const code = typeof err === 'object' && err && 'code' in err
+      ? String(err.code)
+      : 'unknown';
+
+    // The Firebase identity already exists. Do not destroy it because a
+    // separately deployed Firestore rule, service outage, or configuration
+    // problem prevented profile provisioning. Signing in again retries setup.
+    throw Object.assign(
+      new Error(
+        code === 'permission-denied'
+          ? 'Your sign-in account was created, but MicroDo could not save its profile because Firestore denied the request. Please contact the site owner to deploy the current Firestore rules, then sign in with the same email and password to finish setup.'
+          : code === 'unavailable' || code === 'deadline-exceeded'
+          ? 'Your sign-in account was created, but the MicroDo profile service is temporarily unavailable. Please sign in with the same email and password to finish setup when your connection is restored.'
+          : 'Your sign-in account was created, but MicroDo could not finish profile setup. Please sign in with the same email and password to retry.'
+      ),
+      { code: 'profile-provisioning-failed', cause: err }
+    );
   }
 }
 

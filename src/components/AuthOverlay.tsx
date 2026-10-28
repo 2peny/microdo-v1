@@ -172,6 +172,9 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (code === 'auth/too-many-requests') {
       return 'Too many account attempts were made. Wait a little while, then try again.';
     }
+    if (code === 'profile-provisioning-failed') {
+      return err?.message || 'Your sign-in account was created, but profile setup could not be completed. Sign in with the same email and password to retry.';
+    }
     if (code === 'permission-denied') {
       return 'Firebase Authentication could not save the account profile because Firestore denied the write. Check the deployed Firestore rules.';
     }
@@ -288,6 +291,19 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
       setErrorMsg(formatAuthError(err));
       setIsSubmitting(false);
     }
+  };
+
+  const handleInvalidSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const invalidField = event.currentTarget.querySelector<HTMLElement>(':invalid');
+    const fieldName = invalidField?.getAttribute('aria-label') ||
+      invalidField?.getAttribute('name') ||
+      invalidField?.previousElementSibling?.textContent?.trim() ||
+      'required';
+    setSuccessNotice(null);
+    setAuthErrorCode(null);
+    setErrorMsg(`Please complete the ${fieldName} field before creating your account.`);
+    invalidField?.focus();
   };
 
   // Google Popup Sign In Handler
@@ -692,7 +708,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           </div>
 
           {/* FORM: LOGIN OR REGISTER */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} onInvalidCapture={handleInvalidSubmit} className="space-y-4">
             {/* REGISTER FIELDS */}
             {mode === 'register' && (
               <div className="space-y-3">
