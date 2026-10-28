@@ -396,21 +396,23 @@ export async function requestPasswordReset(email: string): Promise<void> {
   }
 }
 
-// Subscribe to real auth state
-export function onScholarAuthStateChanged(callback: (user: ScholarUser | null) => void): () => void {
+// Subscribe to real auth state. A profile lookup failure is not an Auth sign-out:
+// callers must not clear an active learner workspace merely because Firestore is
+// temporarily unavailable or its rules reject a profile read.
+export function onScholarAuthStateChanged(
+  callback: (user: ScholarUser | null) => void,
+  onProfileError?: (error: unknown) => void
+): () => void {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
       try {
         const scholar = await fetchScholarUserProfile(firebaseUser);
         if (auth.currentUser?.uid === firebaseUser.uid) callback(scholar);
       } catch (error) {
-        const isAwaitingGoogleProfile =
-          typeof error === 'object' && error && 'code' in error &&
-          error.code === 'profile-not-found';
-        if (!isAwaitingGoogleProfile && auth.currentUser?.uid === firebaseUser.uid) {
+        if (auth.currentUser?.uid === firebaseUser.uid) {
           console.error('Authenticated account profile could not be loaded.', error);
+          onProfileError?.(error);
         }
-        if (auth.currentUser?.uid === firebaseUser.uid) callback(null);
       }
     } else {
       callback(null);

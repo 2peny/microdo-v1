@@ -356,25 +356,33 @@ export default function App() {
     });
 
     // Listen to real Firebase auth changes across sessions
-    const unsubscribe = onScholarAuthStateChanged((user) => {
-      if (user) {
-        loadWorkspaceForUser(user.id);
-        const isAdmin = user.role === 'admin';
-        setVerifiedAdminId(isAdmin ? user.id : null);
-        setCurrentUser(user);
-        saveStoredUser(user);
-        setCurrentWorkspace(
-          user.roles?.includes('PARENT_GUARDIAN') &&
-            !user.roles?.includes('LEARNER') &&
-            !isAdmin
-            ? 'guardian'
-            : 'learner'
-        );
-      } else {
-        resetSignedOutWorkspace();
+    const unsubscribe = onScholarAuthStateChanged(
+      (user) => {
+        if (user) {
+          loadWorkspaceForUser(user.id);
+          const isAdmin = user.role === 'admin';
+          setVerifiedAdminId(isAdmin ? user.id : null);
+          setCurrentUser(user);
+          saveStoredUser(user);
+          setCurrentWorkspace(
+            user.roles?.includes('PARENT_GUARDIAN') &&
+              !user.roles?.includes('LEARNER') &&
+              !isAdmin
+              ? 'guardian'
+              : 'learner'
+          );
+        } else {
+          resetSignedOutWorkspace();
+        }
+        setIsAuthResolved(true);
+      },
+      (error) => {
+        // Keep an established learner session intact. This path is a Firestore
+        // profile-read failure, not an explicit Firebase sign-out.
+        console.warn('Keeping the current workspace while the account profile is unavailable.', error);
+        setIsAuthResolved(true);
       }
-      setIsAuthResolved(true);
-    });
+    );
 
     return () => unsubscribe();
   }, []);
