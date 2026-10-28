@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, RefreshCw, Search, ShieldCheck, Users, Link2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Search, ShieldCheck, Users, Link2, AlertCircle } from 'lucide-react';
 import { PlatformRole, ScholarUser } from '../types';
 import {
   AdminUserRecord,
@@ -16,9 +16,8 @@ import {
 } from '../lib/firebase';
 
 interface SuperuserDashboardProps {
-  isOpen: boolean;
-  onClose: () => void;
   currentUser: ScholarUser | null;
+  onReturnToLearning: () => void;
 }
 
 const ROLE_OPTIONS: { role: PlatformRole; label: string }[] = [
@@ -27,9 +26,8 @@ const ROLE_OPTIONS: { role: PlatformRole; label: string }[] = [
 ];
 
 export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
-  isOpen,
-  onClose,
   currentUser,
+  onReturnToLearning,
 }) => {
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [links, setLinks] = useState<GuardianLink[]>([]);
@@ -68,8 +66,8 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
   }, [isSuperAdmin]);
 
   useEffect(() => {
-    if (isOpen) void refresh();
-  }, [isOpen, refresh]);
+    void refresh();
+  }, [refresh]);
 
   const visibleUsers = useMemo(() => {
     const queryText = search.trim().toLowerCase();
@@ -80,8 +78,6 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
       )
     );
   }, [search, users]);
-
-  if (!isOpen) return null;
 
   const roleCounts = users.reduce<Record<PlatformRole, number>>(
     (counts, user) => {
@@ -167,12 +163,10 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 sm:p-6">
+    <div className="min-h-screen bg-slate-950 px-3 py-4 text-slate-100 sm:px-6 sm:py-8">
       <section
-        role="dialog"
-        aria-modal="true"
         aria-labelledby="owner-backend-title"
-        className="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 text-slate-100 shadow-2xl"
+        className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl sm:min-h-[calc(100vh-4rem)]"
       >
         <header className="flex items-center justify-between gap-4 border-b border-slate-800 px-5 py-4">
           <div>
@@ -199,11 +193,11 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
             </button>
             <button
               type="button"
-              onClick={onClose}
-              aria-label="Close Owner Backend"
-              className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+              onClick={onReturnToLearning}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white"
             >
-              <X className="h-4 w-4" />
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to learning
             </button>
           </div>
         </header>

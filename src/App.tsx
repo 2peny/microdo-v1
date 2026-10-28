@@ -38,6 +38,7 @@ import {
 } from './utils/lessonDistiller';
 import { Search, CheckCircle2, X, Sparkles, BookOpen, Bookmark, GraduationCap, Crown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 function sanitizeExistingCourses(loadedCourses: StudyDirectoryCourse[]): {
   courses: StudyDirectoryCourse[];
@@ -101,6 +102,8 @@ function sanitizeExistingCourses(loadedCourses: StudyDirectoryCourse[]): {
 }
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   // Start with clean empty state when user starts using the system (or restored & auto-healed from localStorage)
   const [courses, setCourses] = useState<StudyDirectoryCourse[]>(() => {
     try {
@@ -233,7 +236,6 @@ export default function App() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isSuperuserOpen, setIsSuperuserOpen] = useState(false);
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
   const [isFocusModeOpen, setIsFocusModeOpen] = useState(false);
   const [focusArtifact, setFocusArtifact] = useState<StudyArtifact | null>(null);
@@ -294,10 +296,8 @@ export default function App() {
             ? 'guardian'
             : 'learner'
         );
-        if (isAdmin) setIsSuperuserOpen(true);
       } else {
         setVerifiedAdminId(null);
-        setIsSuperuserOpen(false);
         setCurrentWorkspace('learner');
         setCurrentUser((previous) => {
           if (previous?.id.startsWith('local-')) return previous;
@@ -322,7 +322,7 @@ export default function App() {
         ? 'guardian'
         : 'learner'
     );
-    if (isAdmin) setIsSuperuserOpen(true);
+    if (isAdmin) navigate('/owner');
   };
   const canOpenSuperuser =
     verifiedAdminId !== null && currentUser?.id === verifiedAdminId;
@@ -333,7 +333,7 @@ export default function App() {
     setCurrentUser(null);
     setCurrentWorkspace('learner');
     setVerifiedAdminId(null);
-    setIsSuperuserOpen(false);
+    navigate('/');
   };
 
   const handleOpenAuth = (mode: 'login' | 'register' = 'login') => {
@@ -711,6 +711,36 @@ export default function App() {
     setInspectedArtifact(next.artifact);
   };
 
+  if (location.pathname === '/owner') {
+    if (!canOpenSuperuser) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-slate-100">
+          <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <Crown className="h-7 w-7 text-amber-400" />
+            <h1 className="mt-4 text-xl font-semibold">Owner access required</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Sign in with a verified administrator account to view the Owner Backend.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="mt-6 rounded-lg bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-300"
+            >
+              Return to learning
+            </button>
+          </section>
+        </main>
+      );
+    }
+
+    return (
+      <SuperuserDashboard
+        currentUser={currentUser}
+        onReturnToLearning={() => navigate('/')}
+      />
+    );
+  }
+
   if (guardianConsentRequestId) {
     return (
       <>
@@ -771,7 +801,7 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuth={handleOpenAuth}
         onSignOut={handleSignOut}
-        onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
+        onOpenSuperuser={canOpenSuperuser ? () => navigate('/owner') : undefined}
         onOpenGuardian={
           currentUser?.roles?.includes('PARENT_GUARDIAN')
             ? () => setCurrentWorkspace('guardian')
@@ -994,14 +1024,7 @@ export default function App() {
         onClearToEmptyState={handleClearToEmptyState}
         hasModules={currentCourse.modules.length > 0}
         onOpenAuth={handleOpenAuth}
-        onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
-      />
-
-      {/* Superuser / Owner Backend Control Center */}
-      <SuperuserDashboard
-        isOpen={isSuperuserOpen && canOpenSuperuser}
-        onClose={() => setIsSuperuserOpen(false)}
-        currentUser={currentUser}
+        onOpenSuperuser={canOpenSuperuser ? () => navigate('/owner') : undefined}
       />
 
       {/* Quirky Scholar Authentication & Registration Overlay */}
@@ -1036,7 +1059,7 @@ export default function App() {
               ? () => setCurrentWorkspace('guardian')
               : undefined
           }
-          onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
+          onOpenSuperuser={canOpenSuperuser ? () => navigate('/owner') : undefined}
           onOpenFocusMode={(art) => {
             setFocusArtifact(art);
             setIsFocusModeOpen(true);
@@ -1068,7 +1091,7 @@ export default function App() {
               ? () => setCurrentWorkspace('guardian')
               : undefined
           }
-          onOpenSuperuser={canOpenSuperuser ? () => setIsSuperuserOpen(true) : undefined}
+          onOpenSuperuser={canOpenSuperuser ? () => navigate('/owner') : undefined}
           onOpenFocusMode={(art) => {
             setFocusArtifact(art);
             setIsFocusModeOpen(true);
