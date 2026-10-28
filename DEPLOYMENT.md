@@ -36,13 +36,13 @@ Your application will now be running live with full server-side routing and fall
 
 ## Firestore Security Rules
 
-Publish `firestore.rules` to the same Firebase project used by the app. Hosting the frontend does not deploy Firestore rules. This repository is configured for Firebase project `gen-lang-client-0814085166`; after signing into the Firebase CLI with a project owner account, publish the rules with:
+Publish `firestore.rules` to the same Firebase project used by the app. Hosting the frontend does not deploy Firestore rules. This repository is configured for Firebase project `gen-lang-client-0814085166` and its named Firestore database `ai-studio-nestedflowcarddi-d8e66fb2-a0d3-4a1e-955c-c37cece51e93`; after signing into the Firebase CLI with a project owner account, publish the rules with:
 
 ```bash
 npm run deploy:firestore-rules
 ```
 
-You can also paste `firestore.rules` into Firebase Console → Firestore Database → Rules and publish it there. The Owner Backend cannot read user, guardian-link, or audit collections until these rules are live.
+You can also paste `firestore.rules` into Firebase Console → Firestore Database → select `ai-studio-nestedflowcarddi-d8e66fb2-a0d3-4a1e-955c-c37cece51e93` → Rules and publish it there. The Owner Backend cannot read user, guardian-link, or audit collections until these rules are live on that named database.
 
 The rules protect user profiles and admin access requests. The initial Super Admin identity is configured in both `firestore.rules` and `src/lib/firebase.ts`; keep those settings aligned if you change the account.
 

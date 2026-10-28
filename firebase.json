@@ -1,5 +1,8 @@
 {
-  "firestore": {
-    "rules": "firestore.rules"
-  }
+  "firestore": [
+    {
+      "database": "ai-studio-nestedflowcarddi-d8e66fb2-a0d3-4a1e-955c-c37cece51e93",
+      "rules": "firestore.rules"
+    }
+  ]
 }

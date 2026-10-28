@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "vite",
     "lint": "tsc --noEmit",
-    "deploy:firestore-rules": "npx firebase-tools deploy --only firestore:rules --project gen-lang-client-0814085166"
+    "deploy:firestore-rules": "npx firebase-tools deploy --only firestore:ai-studio-nestedflowcarddi-d8e66fb2-a0d3-4a1e-955c-c37cece51e93 --project gen-lang-client-0814085166"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
