@@ -11,6 +11,7 @@ import {
   getAdminAccessRequests,
   getAdminGuardianLinks,
   getAdminUsers,
+  refreshAuthenticatedSession,
   reviewAdminAccessRequest,
   updateAdminUser,
 } from '../lib/firebase';
@@ -45,6 +46,7 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
     setLoading(true);
     setError(null);
     try {
+      await refreshAuthenticatedSession();
       const [loadedUsers, loadedLinks, loadedEvents, loadedRequests] = await Promise.all([
         getAdminUsers(),
         getAdminGuardianLinks(),
@@ -59,7 +61,16 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
         loadedUsers.map((user) => [user.id, user.roles || ['LEARNER']])
       ));
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : 'Administrator data could not be loaded.');
+      const code = typeof refreshError === 'object' && refreshError && 'code' in refreshError
+        ? String(refreshError.code)
+        : '';
+      setError(
+        code === 'permission-denied'
+          ? 'Firestore denied this Owner Backend request. The current source rules already authorize the verified configured Super Admin; publish firestore.rules to Firebase project gen-lang-client-0814085166, then click Refresh.'
+          : refreshError instanceof Error
+          ? refreshError.message
+          : 'Administrator data could not be loaded.'
+      );
     } finally {
       setLoading(false);
     }

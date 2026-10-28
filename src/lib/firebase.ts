@@ -51,6 +51,18 @@ export function isCurrentInitialSuperAdmin(): boolean {
     isInitialSuperAdmin(auth.currentUser.email);
 }
 
+/**
+ * Refreshes Firebase Auth's profile and ID token before a privileged Firestore request.
+ * This is required when an owner verifies their email in another tab: Firestore evaluates
+ * the email_verified claim embedded in the ID token, not a stale client-side profile.
+ */
+export async function refreshAuthenticatedSession(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Sign in with an administrator account.');
+  await user.reload();
+  await user.getIdToken(true);
+}
+
 // Error Handling Infrastructure mandated for Firestore operations
 export enum OperationType {
   CREATE = 'create',
