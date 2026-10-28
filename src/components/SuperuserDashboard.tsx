@@ -4,10 +4,14 @@ import { PlatformRole, ScholarUser } from '../types';
 import {
   AdminUserRecord,
   AdminAuditEvent,
+  AdminAccessRequest,
   GuardianLink,
+  isCurrentInitialSuperAdmin,
   getAdminAuditEvents,
+  getAdminAccessRequests,
   getAdminGuardianLinks,
   getAdminUsers,
+  reviewAdminAccessRequest,
   updateAdminUser,
 } from '../lib/firebase';
 
@@ -20,7 +24,6 @@ interface SuperuserDashboardProps {
 const ROLE_OPTIONS: { role: PlatformRole; label: string }[] = [
   { role: 'LEARNER', label: 'Learner' },
   { role: 'PARENT_GUARDIAN', label: 'Parent / Guardian' },
-  { role: 'SUPER_ADMIN', label: 'Super Admin' },
 ];
 
 export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
@@ -31,25 +34,29 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [links, setLinks] = useState<GuardianLink[]>([]);
   const [auditEvents, setAuditEvents] = useState<AdminAuditEvent[]>([]);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'relationships' | 'audit'>('overview');
+  const [adminRequests, setAdminRequests] = useState<AdminAccessRequest[]>([]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'relationships' | 'audit' | 'adminRequests'>('overview');
   const [search, setSearch] = useState('');
   const [draftRoles, setDraftRoles] = useState<Record<string, PlatformRole[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const isSuperAdmin = isCurrentInitialSuperAdmin();
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [loadedUsers, loadedLinks, loadedEvents] = await Promise.all([
+      const [loadedUsers, loadedLinks, loadedEvents, loadedRequests] = await Promise.all([
         getAdminUsers(),
         getAdminGuardianLinks(),
         getAdminAuditEvents(),
+        isSuperAdmin ? getAdminAccessRequests() : Promise.resolve([]),
       ]);
       setUsers(loadedUsers);
       setLinks(loadedLinks);
       setAuditEvents(loadedEvents);
+      setAdminRequests(loadedRequests);
       setDraftRoles(Object.fromEntries(
         loadedUsers.map((user) => [user.id, user.roles || ['LEARNER']])
       ));
@@ -58,7 +65,7 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     if (isOpen) void refresh();
@@ -81,8 +88,9 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
       for (const role of user.roles || ['LEARNER']) counts[role] += 1;
       return counts;
     },
-    { SUPER_ADMIN: 0, LEARNER: 0, PARENT_GUARDIAN: 0 }
+    { LEARNER: 0, PARENT_GUARDIAN: 0 }
   );
+  const adminCount = users.filter((user) => user.role === 'admin').length;
 
   const setRole = (userId: string, role: PlatformRole, checked: boolean) => {
     setDraftRoles((current) => {
@@ -99,16 +107,8 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
       setError('Assign at least one role before saving.');
       return;
     }
-    if (user.id === currentUser?.id && !roles.includes('SUPER_ADMIN')) {
-      setError('You cannot remove your own Super Admin role.');
-      return;
-    }
-    if (
-      user.roles?.includes('SUPER_ADMIN') &&
-      !roles.includes('SUPER_ADMIN') &&
-      roleCounts.SUPER_ADMIN < 2
-    ) {
-      setError('The last Super Admin cannot be removed.');
+    if (user.id === currentUser?.id && user.role === 'admin') {
+      setError('You cannot change your own administrator privileges from this dashboard.');
       return;
     }
 
@@ -142,6 +142,25 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
       await refresh();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'The account status could not be updated.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reviewRequest = async (request: AdminAccessRequest, decision: 'approved' | 'rejected') => {
+    const action = decision === 'approved' ? 'Approve' : 'Reject';
+    if (!window.confirm(`${action} admin access for ${request.fullName}?`)) return;
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await reviewAdminAccessRequest(request.userId, decision);
+      setNotice(decision === 'approved'
+        ? `Admin access approved for ${request.fullName}.`
+        : `Admin access request rejected for ${request.fullName}.`);
+      await refresh();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : 'The admin request could not be reviewed.');
     } finally {
       setLoading(false);
     }
@@ -195,6 +214,7 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
             ['users', 'Users'],
             ['relationships', 'Guardian relationships'],
             ['audit', 'Security audit'],
+            ...(isSuperAdmin ? [['adminRequests', 'Admin requests'] as const] : []),
           ] as const).map(([tab, label]) => (
             <button
               key={tab}
@@ -227,7 +247,7 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
                 <Metric label="User profiles" value={users.length} icon={<Users className="h-4 w-4" />} />
                 <Metric label="Learner role assignments" value={roleCounts.LEARNER} />
                 <Metric label="Guardian role assignments" value={roleCounts.PARENT_GUARDIAN} />
-                <Metric label="Super Admin assignments" value={roleCounts.SUPER_ADMIN} />
+                <Metric label="Admin accounts" value={adminCount} />
                 <Metric label="Guardian relationships" value={links.length} icon={<Link2 className="h-4 w-4" />} />
               </div>
               <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
@@ -278,7 +298,7 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
                                 type="checkbox"
                                 checked={roles.includes(role)}
                                 onChange={(event) => setRole(user.id, role, event.target.checked)}
-                                disabled={user.id === currentUser?.id && role === 'SUPER_ADMIN'}
+                                disabled={user.id === currentUser?.id && user.role === 'admin'}
                                 className="accent-indigo-500"
                               />
                               {label}
@@ -361,6 +381,51 @@ export const SuperuserDashboard: React.FC<SuperuserDashboardProps> = ({
                 ))}
                 {!auditEvents.length && !loading && (
                   <p className="p-4 text-sm text-slate-400">No persisted access changes are recorded.</p>
+                )}
+
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'adminRequests' && isSuperAdmin && (
+            <div>
+              <h2 className="text-lg font-semibold">Admin access requests</h2>
+              <p className="mt-1 text-xs text-slate-400">
+                Approval grants the admin role. Requests remain learners until approved.
+              </p>
+              <div className="mt-5 space-y-3">
+                {adminRequests.map((request) => (
+                  <article key={request.userId} className="flex flex-col justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:flex-row sm:items-center">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-medium">{request.fullName}</h3>
+                      <p className="mt-1 truncate text-xs text-slate-400">{request.email}</p>
+                      <p className="mt-1 font-mono text-[10px] text-slate-500">{request.userId}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Requested {request.createdAt ? new Date(request.createdAt).toLocaleString() : 'time unavailable'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => void reviewRequest(request, 'approved')}
+                        className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-medium hover:bg-emerald-600 disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => void reviewRequest(request, 'rejected')}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-xs hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {!adminRequests.length && !loading && (
+                  <p className="text-sm text-slate-400">There are no pending admin access requests.</p>
                 )}
               </div>
             </div>

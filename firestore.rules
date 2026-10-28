@@ -17,6 +17,12 @@ service cloud.firestore {
       return !('status' in data) || data.status == 'active';
     }
 
+    function isInitialSuperAdmin() {
+      return signedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email == 'elixirdaoist@gmail.com';
+    }
+
     function hasRole(role) {
       return signedIn() &&
         exists(userPath(request.auth.uid)) &&
@@ -31,15 +37,12 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() &&
-        exists(userPath(request.auth.uid)) &&
-        activeAccount(get(userPath(request.auth.uid)).data) &&
+      return isInitialSuperAdmin() ||
         (
-          get(userPath(request.auth.uid)).data.role in ['admin', 'super_admin'] ||
-          (
-            get(userPath(request.auth.uid)).data.roles is list &&
-            'SUPER_ADMIN' in get(userPath(request.auth.uid)).data.roles
-          )
+          signedIn() &&
+          exists(userPath(request.auth.uid)) &&
+          activeAccount(get(userPath(request.auth.uid)).data) &&
+          get(userPath(request.auth.uid)).data.role == 'admin'
         );
     }
 
@@ -62,11 +65,11 @@ service cloud.firestore {
         data.email is string && data.email.size() <= 150 &&
         data.fullName is string && data.fullName.size() <= 100 &&
         data.username is string && data.username.size() <= 50 &&
-        data.role in ['scholar', 'guardian', 'admin', 'super_admin'] &&
+        data.role in ['scholar', 'guardian', 'admin'] &&
         data.archetype is string && data.archetype.size() <= 50 &&
         (!('roles' in data) ||
           (data.roles is list && data.roles.size() > 0 &&
-            data.roles.hasOnly(['LEARNER', 'PARENT_GUARDIAN', 'SUPER_ADMIN']))) &&
+            data.roles.hasOnly(['LEARNER', 'PARENT_GUARDIAN']))) &&
         (!('status' in data) || data.status in ['active', 'suspended', 'pending']) &&
         (!('lastAdminEventId' in data) ||
           (data.lastAdminEventId is string && data.lastAdminEventId.size() > 0 &&
@@ -95,6 +98,11 @@ service cloud.firestore {
           (
             request.resource.data.role == 'guardian' &&
             request.resource.data.roles == ['PARENT_GUARDIAN']
+          ) ||
+          (
+            isInitialSuperAdmin() &&
+            request.resource.data.role == 'admin' &&
+            request.resource.data.roles == ['LEARNER']
           )
         );
 
@@ -109,6 +117,13 @@ service cloud.firestore {
         (
           isAdmin() &&
           validProfile(request.resource.data, userId) &&
+          (
+            isInitialSuperAdmin() ||
+            (
+              resource.data.role != 'admin' &&
+              request.resource.data.role != 'admin'
+            )
+          ) &&
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['role', 'roles', 'status', 'lastAdminEventId']) &&
           request.resource.data.diff(resource.data).affectedKeys()
@@ -228,6 +243,57 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /adminAccessRequests/{userId} {
+      allow get: if signedIn() &&
+        (request.auth.uid == userId || isInitialSuperAdmin());
+      allow list: if isInitialSuperAdmin();
+
+      allow create: if signedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly([
+          'userId', 'email', 'fullName', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll([
+          'userId', 'email', 'fullName', 'status', 'createdAt'
+        ]) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.fullName is string &&
+        request.resource.data.fullName.size() > 0 &&
+        request.resource.data.fullName.size() <= 100 &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        existsAfter(userPath(userId)) &&
+        getAfter(userPath(userId)).data.role == 'scholar' &&
+        getAfter(userPath(userId)).data.roles == ['LEARNER'];
+
+      allow update: if isInitialSuperAdmin() &&
+        resource.data.status == 'pending' &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'reviewedAt', 'reviewedBy', 'reviewEventId']) &&
+        request.resource.data.status in ['approved', 'rejected'] &&
+        request.resource.data.reviewedAt == request.time &&
+        request.resource.data.reviewedBy == request.auth.uid &&
+        request.resource.data.reviewEventId is string &&
+        existsAfter(adminAuditPath(request.resource.data.reviewEventId)) &&
+        getAfter(adminAuditPath(request.resource.data.reviewEventId)).data.actorId == request.auth.uid &&
+        getAfter(adminAuditPath(request.resource.data.reviewEventId)).data.targetId == userId &&
+        getAfter(adminAuditPath(request.resource.data.reviewEventId)).data.action ==
+          (request.resource.data.status == 'approved'
+            ? 'ADMIN_ACCESS_REQUEST_APPROVED'
+            : 'ADMIN_ACCESS_REQUEST_REJECTED') &&
+        (
+          request.resource.data.status == 'rejected' ||
+          (
+            existsAfter(userPath(userId)) &&
+            getAfter(userPath(userId)).data.role == 'admin' &&
+            getAfter(userPath(userId)).data.lastAdminEventId == request.resource.data.reviewEventId
+          )
+        );
+
+      allow delete: if false;
+    }
+
     match /adminAuditEvents/{eventId} {
       allow get, list: if isAdmin();
 
@@ -240,17 +306,48 @@ service cloud.firestore {
         ]) &&
         request.resource.data.actorId == request.auth.uid &&
         request.resource.data.targetId is string &&
-        request.resource.data.action == 'USER_ACCESS_UPDATED' &&
+        request.resource.data.action in [
+          'USER_ACCESS_UPDATED',
+          'ADMIN_ACCESS_REQUEST_APPROVED',
+          'ADMIN_ACCESS_REQUEST_REJECTED'
+        ] &&
         request.resource.data.roles is list &&
         request.resource.data.status in ['active', 'suspended', 'pending'] &&
         request.resource.data.timestamp == request.time &&
-        existsAfter(userPath(request.resource.data.targetId)) &&
-        getAfter(userPath(request.resource.data.targetId)).data.roles == request.resource.data.roles &&
-        getAfter(userPath(request.resource.data.targetId)).data.status == request.resource.data.status &&
-        getAfter(userPath(request.resource.data.targetId)).data.lastAdminEventId == eventId &&
-        getAfter(userPath(request.resource.data.targetId)).data.diff(
-          get(userPath(request.resource.data.targetId)).data
-        ).affectedKeys().hasAny(['role', 'roles', 'status']);
+        (
+          (
+            request.resource.data.action == 'USER_ACCESS_UPDATED' &&
+            existsAfter(userPath(request.resource.data.targetId)) &&
+            getAfter(userPath(request.resource.data.targetId)).data.roles == request.resource.data.roles &&
+            getAfter(userPath(request.resource.data.targetId)).data.status == request.resource.data.status &&
+            getAfter(userPath(request.resource.data.targetId)).data.lastAdminEventId == eventId &&
+            getAfter(userPath(request.resource.data.targetId)).data.diff(
+              get(userPath(request.resource.data.targetId)).data
+            ).affectedKeys().hasAny(['role', 'roles', 'status'])
+          ) ||
+          (
+            request.resource.data.action in [
+              'ADMIN_ACCESS_REQUEST_APPROVED',
+              'ADMIN_ACCESS_REQUEST_REJECTED'
+            ] &&
+            isInitialSuperAdmin() &&
+            request.resource.data.roles == ['LEARNER'] &&
+            request.resource.data.status == 'active' &&
+            existsAfter(/databases/$(database)/documents/adminAccessRequests/$(request.resource.data.targetId)) &&
+            getAfter(/databases/$(database)/documents/adminAccessRequests/$(request.resource.data.targetId)).data.status ==
+              (request.resource.data.action == 'ADMIN_ACCESS_REQUEST_APPROVED' ? 'approved' : 'rejected') &&
+            getAfter(/databases/$(database)/documents/adminAccessRequests/$(request.resource.data.targetId)).data.reviewEventId == eventId &&
+            getAfter(/databases/$(database)/documents/adminAccessRequests/$(request.resource.data.targetId)).data.reviewedBy == request.auth.uid &&
+            (
+              request.resource.data.action == 'ADMIN_ACCESS_REQUEST_REJECTED' ||
+              (
+                existsAfter(userPath(request.resource.data.targetId)) &&
+                getAfter(userPath(request.resource.data.targetId)).data.role == 'admin' &&
+                getAfter(userPath(request.resource.data.targetId)).data.lastAdminEventId == eventId
+              )
+            )
+          )
+        );
 
       allow update, delete: if false;
     }

@@ -283,14 +283,13 @@ export default function App() {
     // Listen to real Firebase auth changes across sessions
     const unsubscribe = onScholarAuthStateChanged((user) => {
       if (user) {
-        const isAdmin = user.role === 'admin' || user.role === 'super_admin' ||
-          user.roles?.includes('SUPER_ADMIN') === true;
+        const isAdmin = user.role === 'admin';
         setVerifiedAdminId(isAdmin ? user.id : null);
         setCurrentUser(user);
         saveStoredUser(user);
         setCurrentWorkspace(
           user.roles?.includes('PARENT_GUARDIAN') &&
-            !user.roles.includes('LEARNER') &&
+            !user.roles?.includes('LEARNER') &&
             !isAdmin
             ? 'guardian'
             : 'learner'
@@ -314,11 +313,11 @@ export default function App() {
   const handleLoginSuccess = (user: ScholarUser | null) => {
     setCurrentUser(user);
     saveStoredUser(user);
-    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin' ||
-      user?.roles?.includes('SUPER_ADMIN') === true;
+    const isAdmin = user?.role === 'admin';
+    setCurrentView('dashboard');
     setCurrentWorkspace(
       user?.roles?.includes('PARENT_GUARDIAN') &&
-        !user.roles.includes('LEARNER') &&
+        !user?.roles?.includes('LEARNER') &&
         !isAdmin
         ? 'guardian'
         : 'learner'

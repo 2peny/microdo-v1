@@ -23,13 +23,13 @@ import {
   where,
   orderBy,
   limit,
-  setDoc,
+  writeBatch,
   serverTimestamp,
   runTransaction,
   DocumentData,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { PlatformRole, ScholarUser, ScholarArchetype, ScholarUserRole } from '../types';
+import { PlatformRole, RegistrationRole, ScholarUser, ScholarArchetype, ScholarUserRole } from '../types';
 import { ARCHETYPES } from '../utils/authStorage';
 
 // Initialize Firebase App
@@ -40,6 +40,16 @@ export const auth = getAuth(app);
 export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId);
 
 export const googleAuthProvider = new GoogleAuthProvider();
+export const INITIAL_SUPER_ADMIN_EMAIL = 'elixirdaoist@gmail.com';
+
+export function isInitialSuperAdmin(email: string | null | undefined): boolean {
+  return email?.trim().toLowerCase() === INITIAL_SUPER_ADMIN_EMAIL;
+}
+
+export function isCurrentInitialSuperAdmin(): boolean {
+  return auth.currentUser?.emailVerified === true &&
+    isInitialSuperAdmin(auth.currentUser.email);
+}
 
 // Error Handling Infrastructure mandated for Firestore operations
 export enum OperationType {
@@ -73,7 +83,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     ? String(error.code)
     : 'unknown';
   console.error('Firestore operation failed', { operationType, code });
-  throw new Error('The account data could not be loaded or saved. Please retry.');
+  const message = code === 'permission-denied'
+    ? 'Firestore denied access to the account data. Check the deployed Firestore rules and retry.'
+    : code === 'unavailable' || code === 'deadline-exceeded'
+    ? 'Firestore is temporarily unavailable. Check your connection and retry.'
+    : `The account data could not be loaded or saved (${code}). Please retry.`;
+  throw Object.assign(new Error(message), { code });
 }
 
 // Check that Firestore is initialized and ready
@@ -91,18 +106,25 @@ export async function fetchScholarUserProfile(user: FirebaseUser): Promise<Schol
   const userDocRef = doc(db, 'users', user.uid);
   try {
     const snap = await getDoc(userDocRef);
-    if (!snap.exists()) throw new Error('Authenticated account profile is not provisioned.');
+    if (!snap.exists()) {
+      throw Object.assign(new Error('Authenticated account profile is not provisioned.'), {
+        code: 'profile-not-found',
+      });
+    }
     const data = snap.data();
     if (data.status && data.status !== 'active') {
       throw new Error('This account is not active.');
     }
-    const role = (data.role || 'scholar') as ScholarUserRole;
+    const storedRole = (data.role || 'scholar') as ScholarUserRole;
+    const role: ScholarUserRole = user.emailVerified && isInitialSuperAdmin(user.email)
+      ? 'admin'
+      : storedRole;
     const roles: PlatformRole[] = Array.isArray(data.roles)
       ? data.roles.filter((value): value is PlatformRole =>
-          value === 'SUPER_ADMIN' || value === 'LEARNER' || value === 'PARENT_GUARDIAN'
+          value === 'LEARNER' || value === 'PARENT_GUARDIAN'
         )
-      : role === 'admin' || role === 'super_admin'
-      ? ['SUPER_ADMIN']
+      : role === 'admin'
+      ? ['LEARNER']
       : role === 'guardian'
       ? ['PARENT_GUARDIAN']
       : ['LEARNER'];
@@ -121,8 +143,82 @@ export async function fetchScholarUserProfile(user: FirebaseUser): Promise<Schol
       status: data.status || 'active',
     };
   } catch (err) {
+    if (typeof err === 'object' && err && 'code' in err && err.code === 'profile-not-found') {
+      throw err;
+    }
     handleFirestoreError(err, OperationType.GET, null);
   }
+}
+
+async function createUserProfile(
+  user: FirebaseUser,
+  params: {
+    fullName: string;
+    username: string;
+    archetype: ScholarArchetype;
+    majorOrFocus: string;
+    role: RegistrationRole;
+  }
+): Promise<ScholarUser> {
+  const userDocRef = doc(db, 'users', user.uid);
+  const existingSnap = await getDoc(userDocRef);
+  if (existingSnap.exists()) return fetchScholarUserProfile(user);
+
+  const email = user.email?.trim().toLowerCase();
+  if (!email) throw new Error('The Google account must have an email address to create a MicroDo profile.');
+  if (email.length > 150) throw new Error('The Google account email is too long for a MicroDo profile.');
+  const fullName = params.fullName.trim().slice(0, 100);
+  const username = params.username.trim().toLowerCase();
+  if (!fullName || !/^[a-zA-Z0-9_.-]{1,50}$/.test(username)) {
+    throw new Error('The account profile needs a valid name and username.');
+  }
+
+  const isBootstrapAdmin = user.emailVerified && isInitialSuperAdmin(email);
+  const role: ScholarUserRole = isBootstrapAdmin
+    ? 'admin'
+    : params.role === 'guardian'
+    ? 'guardian'
+    : 'scholar';
+  const roles: PlatformRole[] = role === 'guardian' ? ['PARENT_GUARDIAN'] : ['LEARNER'];
+  const archetypeDetail = ARCHETYPES[params.archetype] || ARCHETYPES.midnight_owl;
+  const createdAt = new Date().toISOString();
+  const userProfile = {
+    id: user.uid,
+    email,
+    fullName,
+    username,
+    role,
+    roles,
+    archetype: params.archetype,
+    archetypeLabel: archetypeDetail.label,
+    avatarEmoji: archetypeDetail.emoji,
+    majorOrFocus: params.majorOrFocus.trim() || (role === 'guardian' ? 'Parent / Guardian' : 'General Studies'),
+    createdAt,
+  };
+
+  const batch = writeBatch(db);
+  batch.set(userDocRef, userProfile);
+  if (
+    params.role === 'admin_request' &&
+    !isBootstrapAdmin &&
+    !isInitialSuperAdmin(email)
+  ) {
+    batch.set(doc(db, 'adminAccessRequests', user.uid), {
+      userId: user.uid,
+      email,
+      fullName: userProfile.fullName,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  try {
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+  }
+
+  return fetchScholarUserProfile(user);
 }
 
 // Register real user via Firebase Auth and persist profile to Firestore
@@ -133,7 +229,7 @@ export async function registerWithFirebase(params: {
   username: string;
   archetype: ScholarArchetype;
   majorOrFocus: string;
-  role?: 'scholar' | 'guardian';
+  role?: RegistrationRole;
 }): Promise<ScholarUser> {
   const email = params.email.trim().toLowerCase();
   const fullName = params.fullName.trim();
@@ -147,8 +243,8 @@ export async function registerWithFirebase(params: {
   if (!/^[a-zA-Z0-9_.-]{1,50}$/.test(username)) {
     throw new Error('Username must be 1 to 50 letters, numbers, dots, underscores or hyphens.');
   }
-  if (params.role && params.role !== 'scholar' && params.role !== 'guardian') {
-    throw new Error('Only learner or guardian registration is available.');
+  if (params.role && !['scholar', 'guardian', 'admin_request'].includes(params.role)) {
+    throw new Error('Choose a supported account type.');
   }
 
   // 1. Create authentication credentials in Firebase Auth
@@ -162,26 +258,13 @@ export async function registerWithFirebase(params: {
     console.warn('Profile name update skipped:', e);
   }
 
-  const archetypeDetail = ARCHETYPES[params.archetype] || ARCHETYPES.midnight_owl;
-  const createdAt = new Date().toISOString();
-  const role = params.role || 'scholar';
-  const roles: PlatformRole[] = role === 'guardian' ? ['PARENT_GUARDIAN'] : ['LEARNER'];
-
-  // 3. Persist verified profile to Firestore /users/{uid}
-  const userDocRef = doc(db, 'users', user.uid);
   try {
-    await setDoc(userDocRef, {
-      id: user.uid,
-      email,
+    return await createUserProfile(user, {
       fullName,
       username,
-      role,
-      roles,
       archetype: params.archetype,
-      archetypeLabel: archetypeDetail.label,
-      avatarEmoji: archetypeDetail.emoji,
-      majorOrFocus: params.majorOrFocus.trim() || 'General Studies',
-      createdAt,
+      majorOrFocus: params.majorOrFocus,
+      role: params.role || 'scholar',
     });
   } catch (err) {
     try {
@@ -189,22 +272,8 @@ export async function registerWithFirebase(params: {
     } catch {
       console.error('Failed to clean up a newly created account after profile provisioning failed.');
     }
-    handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+    throw err;
   }
-
-  return {
-    id: user.uid,
-    email,
-    fullName,
-    username,
-    role,
-    roles,
-    archetype: params.archetype,
-    archetypeLabel: archetypeDetail.label,
-    avatarEmoji: archetypeDetail.emoji,
-    majorOrFocus: params.majorOrFocus.trim() || 'General Studies',
-    joinedAt: createdAt.split('T')[0],
-  };
 }
 
 // Log in real user via Firebase Auth and load verified profile
@@ -215,32 +284,36 @@ export async function loginWithFirebase(identifier: string, password: string): P
 }
 
 // Sign in with Google Popup
-export async function signInWithGooglePopup(role: 'scholar' | 'guardian' = 'scholar'): Promise<ScholarUser> {
+export type GoogleSignInResult =
+  | { kind: 'existing'; user: ScholarUser }
+  | { kind: 'new'; firebaseUser: FirebaseUser };
+
+export async function signInWithGooglePopup(): Promise<GoogleSignInResult> {
   const result = await signInWithPopup(auth, googleAuthProvider);
   const user = result.user;
 
-  // Ensure user document exists in Firestore
   const userDocRef = doc(db, 'users', user.uid);
   const existingSnap = await getDoc(userDocRef);
-  if (!existingSnap.exists()) {
-    const defaultArchetype = 'midnight_owl';
-    const roles: PlatformRole[] = role === 'guardian' ? ['PARENT_GUARDIAN'] : ['LEARNER'];
-    await setDoc(userDocRef, {
-      id: user.uid,
-      email: user.email || '',
-      fullName: user.displayName || user.email?.split('@')[0] || (role === 'guardian' ? 'Guardian' : 'Learner'),
-      username: (user.email?.split('@')[0] || (role === 'guardian' ? 'guardian' : 'learner')).replace(/[^a-zA-Z0-9_.-]/g, ''),
-      role,
-      roles,
-      archetype: defaultArchetype,
-      archetypeLabel: ARCHETYPES[defaultArchetype].label,
-      avatarEmoji: ARCHETYPES[defaultArchetype].emoji,
-      majorOrFocus: 'Computer Systems',
-      createdAt: new Date().toISOString(),
-    });
-  }
+  return existingSnap.exists()
+    ? { kind: 'existing', user: await fetchScholarUserProfile(user) }
+    : { kind: 'new', firebaseUser: user };
+}
 
-  return await fetchScholarUserProfile(user);
+export async function completeGoogleProfileSetup(
+  user: FirebaseUser,
+  role: RegistrationRole,
+  majorOrFocus: string
+): Promise<ScholarUser> {
+  const emailName = user.email?.split('@')[0] || '';
+  const username = emailName.replace(/[^a-zA-Z0-9_.-]/g, '').slice(0, 50) ||
+    `user-${user.uid.slice(0, 8)}`;
+  return createUserProfile(user, {
+    fullName: user.displayName?.trim() || emailName || 'Learner',
+    username,
+    archetype: 'midnight_owl',
+    majorOrFocus,
+    role,
+  });
 }
 
 // Sign out
@@ -290,9 +363,14 @@ export function onScholarAuthStateChanged(callback: (user: ScholarUser | null) =
     if (firebaseUser) {
       try {
         const scholar = await fetchScholarUserProfile(firebaseUser);
-        callback(scholar);
-      } catch {
-        callback(null);
+        if (auth.currentUser?.uid === firebaseUser.uid) callback(scholar);
+      } catch (error) {
+        const isAwaitingGoogleProfile =
+          typeof error === 'object' && error && 'code' in error &&
+          error.code === 'profile-not-found';
+        if (!isAwaitingGoogleProfile && auth.currentUser?.uid === firebaseUser.uid) {
+          console.error('Authenticated account profile could not be loaded.', error);
+        }
       }
     } else {
       callback(null);
@@ -430,18 +508,28 @@ export interface GuardianLink {
         timestamp?: string;
       }
 
+      export interface AdminAccessRequest {
+        userId: string;
+        email: string;
+        fullName: string;
+        createdAt?: string;
+      }
+
       export async function getAdminUsers(): Promise<AdminUserRecord[]> {
         if (!auth.currentUser) throw new Error('Sign in with an administrator account.');
         const snapshots = await getDocs(collection(db, 'users'));
         return snapshots.docs.map((snapshot) => {
           const data = snapshot.data();
-          const role = (data.role || 'scholar') as ScholarUserRole;
+          const storedRole = (data.role || 'scholar') as ScholarUserRole;
+          const role: ScholarUserRole = auth.currentUser?.emailVerified && isInitialSuperAdmin(data.email)
+            ? 'admin'
+            : storedRole;
           const roles: PlatformRole[] = Array.isArray(data.roles)
             ? data.roles.filter((value): value is PlatformRole =>
-                value === 'SUPER_ADMIN' || value === 'LEARNER' || value === 'PARENT_GUARDIAN'
+                value === 'LEARNER' || value === 'PARENT_GUARDIAN'
               )
-            : role === 'admin' || role === 'super_admin'
-            ? ['SUPER_ADMIN']
+            : role === 'admin'
+            ? ['LEARNER']
             : role === 'guardian'
             ? ['PARENT_GUARDIAN']
             : ['LEARNER'];
@@ -490,18 +578,91 @@ export interface GuardianLink {
         });
       }
 
+      export async function getAdminAccessRequests(): Promise<AdminAccessRequest[]> {
+        if (!isCurrentInitialSuperAdmin()) {
+          throw new Error('Only the configured Super Admin can review admin access requests.');
+        }
+        const snapshots = await getDocs(query(
+          collection(db, 'adminAccessRequests'),
+          orderBy('createdAt', 'desc')
+        ));
+        return snapshots.docs
+          .filter((snapshot) => snapshot.data().status === 'pending')
+          .map((snapshot) => {
+            const data = snapshot.data();
+            return {
+              userId: data.userId,
+              email: data.email,
+              fullName: data.fullName,
+              createdAt: data.createdAt?.toDate?.().toISOString(),
+            };
+          });
+      }
+
+      export async function reviewAdminAccessRequest(
+        userId: string,
+        decision: 'approved' | 'rejected'
+      ): Promise<void> {
+        const current = auth.currentUser;
+        if (!current || !isCurrentInitialSuperAdmin()) {
+          throw new Error('Only the configured Super Admin can review admin access requests.');
+        }
+
+        const requestRef = doc(db, 'adminAccessRequests', userId);
+        const userRef = doc(db, 'users', userId);
+        const auditRef = doc(collection(db, 'adminAuditEvents'));
+        await runTransaction(db, async (transaction) => {
+          const [requestSnapshot, userSnapshot] = await Promise.all([
+            transaction.get(requestRef),
+            transaction.get(userRef),
+          ]);
+          if (!requestSnapshot.exists() || requestSnapshot.data().status !== 'pending') {
+            throw new Error('This admin access request is no longer pending.');
+          }
+          if (!userSnapshot.exists()) {
+            throw new Error('The requesting account no longer exists.');
+          }
+
+          const userData = userSnapshot.data();
+          const roles: PlatformRole[] = Array.isArray(userData.roles)
+            ? userData.roles.filter((role): role is PlatformRole =>
+                role === 'LEARNER' || role === 'PARENT_GUARDIAN'
+              )
+            : ['LEARNER'];
+          if (decision === 'approved') {
+            transaction.update(userRef, {
+              role: 'admin',
+              roles,
+              status: 'active',
+              lastAdminEventId: auditRef.id,
+            });
+          }
+          transaction.update(requestRef, {
+            status: decision,
+            reviewedAt: serverTimestamp(),
+            reviewedBy: current.uid,
+            reviewEventId: auditRef.id,
+          });
+          transaction.set(auditRef, {
+            actorId: current.uid,
+            targetId: userId,
+            action: decision === 'approved'
+              ? 'ADMIN_ACCESS_REQUEST_APPROVED'
+              : 'ADMIN_ACCESS_REQUEST_REJECTED',
+            roles,
+            status: 'active',
+            timestamp: serverTimestamp(),
+          });
+        });
+      }
+
       export async function updateAdminUser(userId: string, roles: PlatformRole[], status?: AdminUserRecord['status']): Promise<void> {
         const current = auth.currentUser;
         if (!current) throw new Error('Sign in with an administrator account.');
-        if (!roles.length || roles.some((role) => !['SUPER_ADMIN', 'LEARNER', 'PARENT_GUARDIAN'].includes(role))) {
+        if (!roles.length || roles.some((role) => !['LEARNER', 'PARENT_GUARDIAN'].includes(role))) {
           throw new Error('Select at least one supported platform role.');
         }
         const uniqueRoles = [...new Set(roles)];
-        const primaryRole: ScholarUserRole = uniqueRoles.includes('SUPER_ADMIN')
-          ? 'super_admin'
-          : uniqueRoles.includes('PARENT_GUARDIAN')
-          ? 'guardian'
-          : 'scholar';
         const userRef = doc(db, 'users', userId);
         const auditRef = doc(collection(db, 'adminAuditEvents'));
         const nextStatus = status || 'active';
@@ -509,14 +670,18 @@ export interface GuardianLink {
           const snapshot = await transaction.get(userRef);
           if (!snapshot.exists()) throw new Error('The account no longer exists.');
           const previous = snapshot.data();
+          const previousRole = previous.role || 'scholar';
           const previousRoles: PlatformRole[] = Array.isArray(previous.roles)
-            ? previous.roles
-            : previous.role === 'admin' || previous.role === 'super_admin'
-            ? ['SUPER_ADMIN']
-            : previous.role === 'guardian'
+            ? previous.roles.filter((value): value is PlatformRole => value === 'LEARNER' || value === 'PARENT_GUARDIAN')
+            : previousRole === 'guardian'
             ? ['PARENT_GUARDIAN']
             : ['LEARNER'];
           const previousStatus = previous.status || 'active';
+          const primaryRole: ScholarUserRole = previousRole === 'admin'
+            ? 'admin'
+            : uniqueRoles.includes('PARENT_GUARDIAN')
+            ? 'guardian'
+            : 'scholar';
           const sameRoles = previousRoles.length === uniqueRoles.length &&
             previousRoles.every((role, index) => role === uniqueRoles[index]);
           if (sameRoles && previousStatus === nextStatus && previous.role === primaryRole) return;

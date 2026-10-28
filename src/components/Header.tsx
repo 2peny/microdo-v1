@@ -329,7 +329,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <div className="flex flex-col">
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium text-slate-900">Owner Backend</span>
-                        {(currentUser?.role === 'super_admin' || currentUser?.role === 'admin') && (
+                        {currentUser?.role === 'admin' && (
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                             Admin
                           </span>

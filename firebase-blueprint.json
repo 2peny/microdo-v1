@@ -27,16 +27,16 @@
         },
         "role": {
           "type": "string",
-          "enum": ["scholar", "guardian", "admin", "super_admin"],
-          "description": "Legacy primary role; authorization is enforced by Firestore rules"
+          "enum": ["scholar", "guardian", "admin"],
+          "description": "Primary account role; authorization is enforced by Firestore rules"
         },
         "roles": {
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["SUPER_ADMIN", "LEARNER", "PARENT_GUARDIAN"]
+            "enum": ["LEARNER", "PARENT_GUARDIAN"]
           },
-          "description": "Canonical authorized role assignments; public registration can only create learner or guardian"
+          "description": "Authorized platform role assignments for learner or guardian access; admin access is granted through the dedicated admin role"
         },
         "status": {
           "type": "string",
@@ -101,6 +101,21 @@
         "timestamp": { "type": "string" }
       },
       "required": ["actorId", "targetId", "action", "roles", "status", "timestamp"]
+    },
+    "AdminAccessRequest": {
+      "title": "Admin access approval request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "createdAt": { "type": "string" },
+        "reviewedAt": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "reviewEventId": { "type": "string" }
+      },
+      "required": ["userId", "email", "fullName", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -115,6 +130,10 @@
     "/adminAuditEvents/{eventId}": {
       "schema": "AdminAuditEvent",
       "description": "Admin account-role/status changes written atomically with the user profile update and readable only by an authorized admin."
+    },
+    "/adminAccessRequests/{userId}": {
+      "schema": "AdminAccessRequest",
+      "description": "New users may request admin access; only the configured Super Admin can approve or reject requests. Requests do not grant privileges while pending."
     }
   }
 }

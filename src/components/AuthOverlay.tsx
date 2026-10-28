@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import type { User as FirebaseUser } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -10,7 +11,7 @@ import {
   AlertTriangle,
   ExternalLink,
 } from 'lucide-react';
-import { ScholarUser, ScholarArchetype } from '../types';
+import { RegistrationRole, ScholarUser, ScholarArchetype } from '../types';
 import {
   ARCHETYPES,
   saveStoredUser,
@@ -19,6 +20,8 @@ import {
   registerWithFirebase,
   loginWithFirebase,
   signInWithGooglePopup,
+  completeGoogleProfileSetup,
+  isInitialSuperAdmin,
   signOutScholar,
   sendAccountVerificationEmail,
   requestPasswordReset,
@@ -55,7 +58,8 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [username, setUsername] = useState('');
   const [selectedArchetype, setSelectedArchetype] = useState<ScholarArchetype>('midnight_owl');
   const [majorFocus, setMajorFocus] = useState('Computer Systems');
-  const [registrationRole, setRegistrationRole] = useState<'scholar' | 'guardian'>('scholar');
+  const [registrationRole, setRegistrationRole] = useState<RegistrationRole>('scholar');
+  const [pendingGoogleUser, setPendingGoogleUser] = useState<FirebaseUser | null>(null);
 
   // UI States
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -64,6 +68,21 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [resetNotice, setResetNotice] = useState<string | null>(null);
+
+  const isLearnerProfileRegistration = mode === 'register' && registrationRole === 'scholar';
+  const isBootstrapSuperAdmin = pendingGoogleUser?.emailVerified === true &&
+    isInitialSuperAdmin(pendingGoogleUser.email);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setMode(initialMode);
+    setRegistrationRole('scholar');
+    setPendingGoogleUser(null);
+    setErrorMsg(null);
+    setAuthErrorCode(null);
+    setSuccessNotice(null);
+    setResetNotice(null);
+  }, [initialMode, isOpen]);
 
   if (!isOpen) return null;
 
@@ -132,6 +151,9 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (code === 'auth/operation-not-allowed') {
       return `Email/Password sign-in is disabled in Firebase project (${firebaseConfig.projectId}). Enable it in Firebase Console or use the clearly labelled guest option.`;
     }
+    if (code === 'auth/weak-password') {
+      return 'Password should be at least 6 characters.';
+    }
     if (code === 'auth/email-already-in-use') {
       return 'Account registration could not be completed. Try signing in or use password recovery.';
     }
@@ -141,15 +163,23 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
     if (code === 'auth/invalid-email') {
       return 'Please enter a valid email address.';
     }
-    if (code === 'auth/weak-password') {
-      return 'Password should be at least 6 characters.';
-    }
     if (code === 'auth/popup-closed-by-user') {
       return 'Google sign-in popup was closed before completing.';
     }
     if (code === 'auth/network-request-failed') {
       return 'Network issue connecting to authentication service. Please check your connection.';
     }
+    if (code === 'auth/too-many-requests') {
+      return 'Too many account attempts were made. Wait a little while, then try again.';
+    }
+    if (code === 'permission-denied') {
+      return 'Firebase Authentication could not save the account profile because Firestore denied the write. Check the deployed Firestore rules.';
+    }
+    if (code === 'unavailable' || code === 'deadline-exceeded') {
+      return 'Firebase could not be reached. Check your connection and try again.';
+    }
+    if (!code && err instanceof Error) return err.message;
+    if (code && err instanceof Error && err.message) return err.message;
     return 'Authentication failed. Please try again.';
   };
 
@@ -224,7 +254,11 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           fullName: cleanName,
           username: cleanUsername,
           archetype: selectedArchetype,
-          majorOrFocus: majorFocus || 'Computer Systems',
+          majorOrFocus: registrationRole === 'guardian'
+            ? 'Parent / Guardian'
+            : registrationRole === 'admin_request'
+            ? 'General Studies'
+            : majorFocus || 'Computer Systems',
           role: registrationRole,
         });
         let verificationNotice = '';
@@ -233,6 +267,11 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           verificationNotice = ' Check your email to verify the account before requesting or approving guardian links.';
         } catch {
           verificationNotice = ' The account was created, but the verification email could not be sent. You can request another from the guardian workspace.';
+        }
+        if (registrationRole === 'admin_request' && isInitialSuperAdmin(cleanEmail)) {
+          verificationNotice += ' The designated initial Super Admin will be recognized after email verification.';
+        } else if (registrationRole === 'admin_request' && newUser.role !== 'admin') {
+          verificationNotice += ' Admin access is pending Super Admin approval; your account remains a learner until approved.';
         }
 
         saveStoredUser(newUser);
@@ -255,24 +294,55 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
     setAuthErrorCode(null);
+    setSuccessNotice(null);
+    setPendingGoogleUser(null);
     setIsGoogleSubmitting(true);
     try {
-      const googleUser = await signInWithGooglePopup(
-        registrationRole
-      );
-      saveStoredUser(googleUser);
-      setSuccessNotice(`Signed in with Google as ${googleUser.fullName}!`);
-      setTimeout(() => {
-        setIsGoogleSubmitting(false);
-        onLoginSuccess(googleUser);
+      const result = await signInWithGooglePopup();
+      if (result.kind === 'new') {
+        setPendingGoogleUser(result.firebaseUser);
+        setMode('register');
+      } else {
+        saveStoredUser(result.user);
+        onLoginSuccess(result.user);
         onClose();
-      }, 500);
+      }
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user') {
         setAuthErrorCode(err?.code || null);
         setErrorMsg(formatAuthError(err));
       }
+    } finally {
       setIsGoogleSubmitting(false);
+    }
+  };
+
+  const handleCompleteGoogleSetup = async () => {
+    if (!pendingGoogleUser) return;
+    setErrorMsg(null);
+    setAuthErrorCode(null);
+    setIsSubmitting(true);
+    try {
+      const googleUser = await completeGoogleProfileSetup(
+        pendingGoogleUser,
+        registrationRole,
+        registrationRole === 'guardian' ? 'Parent / Guardian' : majorFocus
+      );
+      saveStoredUser(googleUser);
+      setSuccessNotice(
+        registrationRole === 'admin_request' && googleUser.role !== 'admin'
+          ? 'Account created. Your admin access request is pending Super Admin approval.'
+          : `Account created for ${googleUser.fullName}.`
+      );
+      setTimeout(() => {
+        setIsSubmitting(false);
+        onLoginSuccess(googleUser);
+        onClose();
+      }, 700);
+    } catch (err: any) {
+      setAuthErrorCode(err?.code || null);
+      setErrorMsg(formatAuthError(err));
+      setIsSubmitting(false);
     }
   };
 
@@ -326,7 +396,15 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
           <div className="mt-4 flex gap-5 border-b border-slate-100 text-sm">
             <button
               type="button"
-              onClick={() => { setMode('login'); setErrorMsg(null); }}
+              onClick={() => {
+                setMode('login');
+                setRegistrationRole('scholar');
+                setErrorMsg(null);
+                setAuthErrorCode(null);
+                setSuccessNotice(null);
+                setResetNotice(null);
+                setPendingGoogleUser(null);
+              }}
               className={`border-b-2 pb-2 font-medium transition-colors cursor-pointer ${
                 mode === 'login'
                   ? 'border-indigo-600 text-slate-900'
@@ -337,7 +415,13 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => { setMode('register'); setErrorMsg(null); }}
+              onClick={() => {
+                setMode('register');
+                setErrorMsg(null);
+                setAuthErrorCode(null);
+                setSuccessNotice(null);
+                setResetNotice(null);
+              }}
               className={`border-b-2 pb-2 font-medium transition-colors cursor-pointer ${
                 mode === 'register'
                   ? 'border-indigo-600 text-slate-900'
@@ -486,26 +570,87 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
             )}
           </AnimatePresence>
 
-          {/* Quick Google Sign In */}
-          {mode === 'login' && (
+          {pendingGoogleUser ? (
+            <section className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Finish setting up your account</h3>
+                <p className="mt-1 text-xs text-slate-600">
+                  Signed in with Google as {pendingGoogleUser.displayName || pendingGoogleUser.email}.
+                  Choose the account type for this new account.
+                </p>
+              </div>
+              {isBootstrapSuperAdmin ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  This verified account is configured as the initial Super Admin.
+                </p>
+              ) : <div>
+                <label htmlFor="google-new-account-role" className="mb-1 block text-xs font-semibold text-slate-700">
+                  Account type
+                </label>
+                <select
+                  id="google-new-account-role"
+                  value={registrationRole}
+                  onChange={(event) => setRegistrationRole(event.target.value as RegistrationRole)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="scholar">Learner</option>
+                  <option value="guardian">Parent / Guardian</option>
+                  <option value="admin_request">Admin (request approval)</option>
+                </select>
+                {registrationRole === 'admin_request' && (
+                  <p className="mt-1 text-[11px] text-amber-800">
+                    Your account will start as a learner. Admin access is granted only after Super Admin approval.
+                  </p>
+                )}
+                {registrationRole === 'guardian' && (
+                  <p className="mt-1 text-[11px] text-slate-600">
+                    Learner access is available only after the learner approves your request.
+                  </p>
+                )}
+              </div>}
+              <button
+                type="button"
+                disabled={isSubmitting || isGoogleSubmitting}
+                onClick={() => void handleCompleteGoogleSetup()}
+                className="w-full rounded-lg bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-800 disabled:opacity-60"
+              >
+                {isSubmitting ? 'Creating account…' : 'Continue'}
+              </button>
+            </section>
+          ) : (
+          <>
+          {/* Account type applies to both email registration and first-time Google signup. */}
+          {mode === 'register' && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <label htmlFor="google-new-account-role" className="mb-1 block text-xs font-semibold text-slate-700">
-                Account type for a new Google account
+              <label htmlFor="registration-account-role" className="mb-1 block text-xs font-semibold text-slate-700">
+                Account type
               </label>
               <select
-                id="google-new-account-role"
+                id="registration-account-role"
                 value={registrationRole}
-                onChange={(event) => setRegistrationRole(event.target.value as 'scholar' | 'guardian')}
+                onChange={(event) => setRegistrationRole(event.target.value as RegistrationRole)}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="scholar">Learner</option>
                 <option value="guardian">Parent / Guardian</option>
+                <option value="admin_request">Admin (request approval)</option>
               </select>
               <p className="mt-1 text-[11px] text-slate-500">
-                Existing Google accounts keep their current role. This choice is used only if you are creating a new account.
+                Used for email registration and new Google accounts. Existing Google accounts keep their current role.
               </p>
+              {registrationRole === 'admin_request' && (
+                <p className="mt-1 text-[11px] text-amber-800">
+                  Your account will start as a learner. Admin access requires Super Admin approval.
+                </p>
+              )}
+              {registrationRole === 'guardian' && (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Learner access is available only after the learner approves your request.
+                </p>
+              )}
             </div>
           )}
+          {/* Quick Google Sign In */}
           <button
             type="button"
             disabled={isGoogleSubmitting || isSubmitting}
@@ -595,28 +740,8 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                   </div>
                 </div>
 
-                <div>
-                  <label htmlFor="registration-role" className="block text-xs font-semibold text-slate-700 mb-1">
-                    Create a learner or guardian account
-                  </label>
-                  <select
-                    id="registration-role"
-                    value={registrationRole}
-                    onChange={(event) => setRegistrationRole(event.target.value as 'scholar' | 'guardian')}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-xs text-slate-900 bg-white"
-                  >
-                    <option value="scholar">Learner</option>
-                    <option value="guardian">Parent / Guardian</option>
-                  </select>
-                  {registrationRole === 'guardian' && (
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Learner access is available only after the learner approves your request.
-                    </p>
-                  )}
-                </div>
-
-                {/* Archetype Picker */}
-                <div>
+                {/* Learner-specific profile fields */}
+                {isLearnerProfileRegistration && <div>
                   <label htmlFor="study-style-archetype" className="mb-1 block text-xs font-semibold text-slate-700">
                     Study style
                   </label>
@@ -631,10 +756,9 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                     ))}
                   </select>
                   <p className="mt-1 text-[11px] text-slate-500">{activeArchetypeObj.trait}</p>
-                </div>
+                </div>}
 
-                {/* Academic Focus / Major */}
-                <div>
+                {isLearnerProfileRegistration && <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Discipline / Field of Study
                   </label>
@@ -645,7 +769,7 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
                       placeholder="e.g. Computer Science, Medicine, Law"
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-xs text-slate-900 placeholder:text-slate-400 bg-white"
                     />
-                </div>
+                </div>}
               </div>
             )}
 
@@ -742,6 +866,8 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({
             </div>
 
           </form>
+          </>
+          )}
         </div>
 
         {/* Current Active User Status Bar */}

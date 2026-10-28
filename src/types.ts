@@ -137,14 +137,14 @@ export type ScholarArchetype =
   | 'formula_crafter';
 
 export type ScholarUserRole = 
-  | 'super_admin' 
   | 'admin' 
   | 'instructor' 
   | 'scholar' 
   | 'auditor'
   | 'guardian';
 
-export type PlatformRole = 'SUPER_ADMIN' | 'LEARNER' | 'PARENT_GUARDIAN';
+export type PlatformRole = 'LEARNER' | 'PARENT_GUARDIAN';
+export type RegistrationRole = 'scholar' | 'guardian' | 'admin_request';
 
 export interface UserPermissions {
   canUploadModules: boolean;
