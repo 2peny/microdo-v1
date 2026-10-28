@@ -1,348 +1,64 @@
-import React from 'react';
+import React, { useId, useMemo, useState } from 'react';
+import { Maximize2, X } from 'lucide-react';
 import { StudyArtifact } from '../types';
 
-type VisualDiagram =
-  | {
-      kind: 'architecture';
-      title: string;
-      components: string[];
-      source: string;
-    }
-  | {
-      kind: 'comparison';
-      title: string;
-      models: { name: string; definition: string }[];
-      source: string;
-    }
-  | {
-      kind: 'process';
-      title: string;
-      steps: string[];
-      source: string;
-    }
-  | {
-      kind: 'function';
-      title: string;
-      formula: string;
-      source: string;
-    };
+/** Structured, source-grounded visuals. No image provider is configured, so this
+ * deliberately uses validated SVG rather than unlabelled or distorted AI artwork. */
+export type LearningVisualType = 'technical-diagram' | 'process-illustration' | 'comparison-illustration' | 'mathematical-visualisation' | 'scientific-illustration';
+interface VisualPlan { topic: string; objective: string; mainConcept: string; reasonUseful: string; visualType: LearningVisualType; elements: string[]; relationships: string[]; labels: string[]; source: string; constraints: string[]; }
+export type LearningVisualSpec =
+  | { kind: 'architecture'; plan: VisualPlan; components: string[] }
+  | { kind: 'comparison'; plan: VisualPlan; models: { name: string; definition: string }[] }
+  | { kind: 'process'; plan: VisualPlan; steps: string[] }
+  | { kind: 'linear'; plan: VisualPlan; formula: string; slope: number; intercept: number }
+  | { kind: 'fraction'; plan: VisualPlan; numerator: number; denominator: number }
+  | { kind: 'water-cycle'; plan: VisualPlan; stages: string[] }
+  | { kind: 'photosynthesis'; plan: VisualPlan };
 
-const visualCache = new Map<string, VisualDiagram | null>();
-const MAX_VISUAL_CACHE_ENTRIES = 64;
+const cache = new Map<string, LearningVisualSpec | null>();
+const MAX_CACHE = 64;
+const MAX_LABEL = 72;
+const fingerprint = (text: string) => { let hash = 2166136261; for (let i = 0; i < text.length; i += 1) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 16777619); } return (hash >>> 0).toString(36); };
+const compact = (value: string, max = MAX_LABEL) => { const normalized = value.replace(/\s+/g, ' ').trim(); return normalized.length > max ? `${normalized.slice(0, max - 1).trimEnd()}…` : normalized; };
+function cacheValue(key: string, value: LearningVisualSpec | null) { if (!cache.has(key) && cache.size >= MAX_CACHE) { const oldest = cache.keys().next().value; if (oldest) cache.delete(oldest); } cache.set(key, value); return value; }
+function sourceLabel(artifact: StudyArtifact) { const ref = artifact.sourceReference; return ref?.documentName ? `${ref.documentName}${ref.pageNumber ? ` · Page ${ref.pageNumber}` : ''}` : 'lesson source text'; }
+function contentOf(artifact: StudyArtifact) { const lesson = artifact.structuredLesson; return [artifact.sourceText, lesson?.topicTitle, lesson?.introduction, ...(lesson?.learningObjectives || []), ...(lesson?.keyConcepts || []).flatMap((item) => [item.term, item.definition]), ...(lesson?.rulesAndFormulas || []).flatMap((item) => [item.concept, item.formula || '', item.explanation])].filter(Boolean).join('\n'); }
+function definitionFor(artifact: StudyArtifact, name: string) { const found = artifact.structuredLesson?.keyConcepts.find((item) => item.term.toLowerCase().includes(name.toLowerCase()))?.definition; if (found && found.length <= 360) return found; const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return (artifact.sourceText || '').match(new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?\\*{0,2}${escaped}\\*{0,2}\\s*:\\s*([^\\n]+)`, 'i'))?.[1]?.trim() || null; }
+function plan(artifact: StudyArtifact, visualType: LearningVisualType, concept: string, reason: string, elements: string[], relationships: string[], labels: string[], constraints: string[]): VisualPlan { return { topic: artifact.structuredLesson?.topicTitle || artifact.title, objective: artifact.structuredLesson?.learningObjectives[0] || `Understand ${concept}.`, mainConcept: concept, reasonUseful: reason, visualType, elements, relationships, labels: labels.map((label) => compact(label)), source: sourceLabel(artifact), constraints }; }
 
-function contentFingerprint(content: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < content.length; index += 1) {
-    hash ^= content.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-function cacheVisual(key: string, value: VisualDiagram | null): VisualDiagram | null {
-  if (visualCache.size >= MAX_VISUAL_CACHE_ENTRIES) {
-    const oldestKey = visualCache.keys().next().value;
-    if (oldestKey) visualCache.delete(oldestKey);
-  }
-  visualCache.set(key, value);
-  return value;
-}
-
-function findDefinition(artifact: StudyArtifact, name: string): string | null {
-  const concept = artifact.structuredLesson?.keyConcepts.find((item) =>
-    item.term.toLowerCase().includes(name.toLowerCase())
-  );
-  if (concept?.definition && concept.definition.length <= 600) return concept.definition;
-
-  const source = artifact.sourceText || '';
-  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = source.match(
-    new RegExp(`(?:^|\\n)\\s*(?:[-*]\\s*)?\\*{0,2}${escapedName}\\*{0,2}\\s*:\\s*([^\\n]+)`, 'i')
-  );
-  const definition = match?.[1]?.trim();
-  return definition && definition.length <= 600 ? definition : null;
-}
-
-export function selectLearningVisual(artifact: StudyArtifact): VisualDiagram | null {
+/** Selects a visual only when the available lesson content supports one accurately. */
+export function selectLearningVisual(artifact: StudyArtifact): LearningVisualSpec | null {
   if (artifact.type !== 'overview') return null;
-  const source = artifact.sourceText?.trim() || '';
-  const lesson = artifact.structuredLesson;
-  if ((!source && !lesson) || source.length > 100_000) return null;
-
-  const cacheKey = `${artifact.id}:${contentFingerprint(`${source}\n${artifact.overviewMarkdown}`)}`;
-  if (visualCache.has(cacheKey)) return visualCache.get(cacheKey) || null;
-
-  const title = lesson?.topicTitle || artifact.title;
-  const lessonText = [
-    lesson?.topicTitle,
-    lesson?.introduction,
-    ...(lesson?.keyConcepts || []).flatMap((concept) => [concept.term, concept.definition]),
-    ...(lesson?.rulesAndFormulas || []).flatMap((rule) => [rule.concept, rule.formula || '', rule.explanation]),
-  ].join(' ');
-  const content = `${source}\n${lessonText}`;
+  const content = contentOf(artifact); if (!content.trim() || content.length > 100000) return null;
+  const key = `${artifact.id}:${fingerprint(`${content}\n${artifact.overviewMarkdown}`)}`; if (cache.has(key)) return cache.get(key) || null;
   const lower = content.toLowerCase();
-  const sourceReference = artifact.sourceReference?.documentName
-    ? `${artifact.sourceReference.documentName}${artifact.sourceReference.pageNumber ? ` · Page ${artifact.sourceReference.pageNumber}` : ''}`
-    : 'Lesson source text';
-
-  const serviceModels = ['Infrastructure as a Service (IaaS)', 'Platform as a Service (PaaS)', 'Software as a Service (SaaS)'];
-  if (
-    !/\barchitecture\b/i.test(title) &&
-    serviceModels.every((model) => lower.includes(model.toLowerCase()))
-  ) {
-    const models = serviceModels.map((name) => {
-      const definition = findDefinition(artifact, name);
-      return definition ? { name, definition } : null;
-    });
-    if (models.every((model) => model !== null)) {
-      return cacheVisual(cacheKey, {
-        kind: 'comparison',
-        title: 'Cloud service models',
-        models: models as { name: string; definition: string }[],
-        source: sourceReference,
-      });
-    }
-  }
-
-  const cloudComponents = ['servers', 'storage', 'databases', 'networking', 'software', 'analytics']
-    .filter((component) => lower.includes(component));
-  if (
-    /\barchitecture\b/i.test(title) &&
-    /\bcloud computing\b/i.test(content) &&
-    /\bover the internet\b/i.test(content) &&
-    cloudComponents.length >= 3
-  ) {
-    return cacheVisual(cacheKey, {
-      kind: 'architecture',
-      title: 'Cloud services described in this lesson',
-      components: cloudComponents,
-      source: sourceReference,
-    });
-  }
-
-  const numberedSteps = source
-    .split(/\r?\n/)
-    .map((line) => line.match(/^\s*(?:\*\*)?(\d{1,2})[.)]\s+(.+?)\s*(?:\*\*)?\s*$/))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .map((match) => match[2].replace(/\*\*/g, '').trim())
-    .filter((step) => step.length > 8 && step.length < 180);
-  if (numberedSteps.length >= 2 && numberedSteps.length <= 5) {
-    return cacheVisual(cacheKey, {
-      kind: 'process',
-      title: 'Procedure from the source',
-      steps: numberedSteps,
-      source: sourceReference,
-    });
-  }
-
-  if (/\b(?:function|functions)\b/i.test(content)) {
-    const formula = source.match(/(?:f\s*\(\s*[a-z]\s*\)\s*=|y\s*=)[^\n.;]{1,80}/i)?.[0]?.trim();
-    if (formula) {
-      return cacheVisual(cacheKey, {
-        kind: 'function',
-        title: 'Function relationship',
-        formula,
-        source: sourceReference,
-      });
-    }
-  }
-
-  return cacheVisual(cacheKey, null);
+  const linear = content.match(/(?:f\s*\(\s*x\s*\)|y)\s*=\s*([+-]?\d*\.?\d*)\s*x\s*([+-]\s*\d*\.?\d+)?/i);
+  if (linear) { const raw = linear[1].replace(/\s/g, ''); const slope = raw === '' || raw === '+' ? 1 : raw === '-' ? -1 : Number(raw); const intercept = Number((linear[2] || '0').replace(/\s/g, '')); if (Number.isFinite(slope) && Number.isFinite(intercept) && Math.abs(slope) <= 6 && Math.abs(intercept) <= 8) return cacheValue(key, { kind: 'linear', formula: linear[0].replace(/\s+/g, ' '), slope, intercept, plan: plan(artifact, 'mathematical-visualisation', linear[0], 'A calculation-backed plot makes the exact input-output relationship visible.', ['axes', 'exact line'], ['Line follows the parsed equation.'], ['x', 'y', linear[0]], ['Only simple bounded linear equations are plotted.']) }); }
+  const fraction = content.match(/\b([1-9]\d?)\s*\/\s*([2-9]\d?)\b/);
+  if (fraction && /\bfraction|numerator|denominator|equal parts?\b/i.test(content)) { const numerator = Number(fraction[1]); const denominator = Number(fraction[2]); if (numerator <= denominator && denominator <= 12) return cacheValue(key, { kind: 'fraction', numerator, denominator, plan: plan(artifact, 'mathematical-visualisation', `${numerator}/${denominator}`, 'Equal shaded parts make the source fraction concrete.', ['one whole', 'equal parts'], ['Every segment has equal area.'], [`${numerator}/${denominator}`], ['No unequal parts or inferred values.']) }); }
+  if (/\bphotosynthesis\b/i.test(content) && ['sunlight', 'carbon dioxide', 'water', 'glucose', 'oxygen'].every((word) => lower.includes(word))) return cacheValue(key, { kind: 'photosynthesis', plan: plan(artifact, 'scientific-illustration', 'Photosynthesis', 'A leaf-centered flow distinguishes named inputs from outputs.', ['leaf', 'inputs', 'outputs'], ['Inputs enter; products leave.'], ['Sunlight', 'CO₂', 'H₂O', 'Glucose', 'O₂'], ['No molecular ratios are inferred.']) });
+  if (/\bwater cycle\b/i.test(content)) { const stages = ['evaporation', 'condensation', 'precipitation', 'collection'].filter((word) => lower.includes(word)); if (stages.length >= 3) return cacheValue(key, { kind: 'water-cycle', stages, plan: plan(artifact, 'scientific-illustration', 'Water cycle', 'A cycle makes the source-named stages easier to follow.', stages, ['Arrows follow the named cycle order.'], stages, ['Only named stages are shown.']) }); }
+  const services = ['Infrastructure as a Service (IaaS)', 'Platform as a Service (PaaS)', 'Software as a Service (SaaS)'];
+  if (services.every((service) => lower.includes(service.toLowerCase()))) { const models = services.map((name) => { const definition = definitionFor(artifact, name); return definition ? { name, definition: compact(definition, 150) } : null; }); if (models.every(Boolean)) return cacheValue(key, { kind: 'comparison', models: models as { name: string; definition: string }[], plan: plan(artifact, 'comparison-illustration', 'Cloud service models', 'Parallel cards make source-grounded differences immediately comparable.', services, ['Each definition remains with its service model.'], services, ['No hierarchy or components are inferred.']) }); }
+  const steps = [...(artifact.sourceText || artifact.overviewMarkdown).matchAll(/(?:^|\n)\s*[1-6]\.\s+([^\n]{10,180})/g)].map((match) => compact(match[1])).filter(Boolean);
+  if (steps.length >= 2 && steps.length <= 6) return cacheValue(key, { kind: 'process', steps, plan: plan(artifact, 'process-illustration', artifact.structuredLesson?.topicTitle || artifact.title, 'The source explicitly gives an ordered procedure.', steps, ['Arrows preserve numbered order.'], steps.map((_, index) => `Step ${index + 1}`), ['No unlisted steps are added.']) });
+  const components = ['servers', 'storage', 'databases', 'networking', 'software', 'analytics'].filter((word) => lower.includes(word));
+  if (/\bcloud computing\b/i.test(content) && /\barchitecture\b/i.test(content) && components.length >= 3) return cacheValue(key, { kind: 'architecture', components, plan: plan(artifact, 'technical-diagram', 'Cloud computing components', 'A grouped overview helps learners recognize source-named components.', components, ['No data flow or topology is implied.'], components, ['Components are an inventory, not an architecture claim.']) });
+  return cacheValue(key, null);
 }
 
-function wrapText(text: string, maxCharacters: number): string[] {
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    if (!word) continue;
-    if (current && `${current} ${word}`.length > maxCharacters) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = current ? `${current} ${word}` : word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
+export function validateLearningVisual(spec: LearningVisualSpec): boolean { const p = spec.plan; if (!p.topic || !p.reasonUseful || !p.source || !p.elements.length || !p.constraints.length || p.labels.some((label) => !label || label.length > MAX_LABEL)) return false; if (spec.kind === 'architecture') return spec.components.length >= 3 && spec.components.length <= 6; if (spec.kind === 'comparison') return spec.models.length >= 2 && spec.models.length <= 4 && spec.models.every((item) => item.name && item.definition); if (spec.kind === 'process') return spec.steps.length >= 2 && spec.steps.length <= 6; if (spec.kind === 'linear') return Number.isFinite(spec.slope) && Number.isFinite(spec.intercept); if (spec.kind === 'fraction') return spec.numerator >= 1 && spec.numerator <= spec.denominator && spec.denominator <= 12; if (spec.kind === 'water-cycle') return spec.stages.length >= 3; return true; }
+
+function Label({ text, x, y, max = 22, className = 'fill-slate-800 text-[13px] font-medium' }: { text: string; x: number | string; y: number | string; max?: number; className?: string }) { const words = text.split(/\s+/); const lines: string[] = []; let line = ''; words.forEach((word) => { const next = line ? `${line} ${word}` : word; if (next.length > max && line) { lines.push(line); line = word; } else line = next; }); if (line) lines.push(line); const visible = lines.slice(0, 3); return <text x={x} y={Number(y) - ((visible.length - 1) * 16) / 2} textAnchor="middle" className={className}>{visible.map((item, index) => <tspan key={`${item}-${index}`} x={x} dy={index ? 16 : 0}>{item}</tspan>)}</text>; }
+function Frame({ title, description, children }: { title: string; description: string; children: React.ReactNode }) { const uid = useId().replace(/:/g, ''); return <svg viewBox="0 0 720 300" role="img" aria-labelledby={`${uid}-title ${uid}-desc`} className="h-auto w-full"><title id={`${uid}-title`}>{title}</title><desc id={`${uid}-desc`}>{description}</desc><rect x="18" y="18" width="684" height="264" rx="20" className="fill-slate-50" />{children}</svg>; }
+function Artwork({ spec }: { spec: LearningVisualSpec }) {
+  if (spec.kind === 'architecture') return <Frame title={spec.plan.topic} description="Non-directional overview of named components.">{spec.components.map((item, index) => { const x = 54 + (index % 3) * 220; const y = 74 + Math.floor(index / 3) * 100; return <g key={item}><rect x={x} y={y} width="180" height="66" rx="15" className="fill-white stroke-slate-300" /><circle cx={x + 25} cy={y + 33} r="10" className="fill-indigo-100" /><Label text={item} x={x + 108} y={y + 38} max={18} /></g>; })}</Frame>;
+  if (spec.kind === 'comparison') return <Frame title={spec.plan.topic} description="Source-grounded service comparison.">{spec.models.map((item, index) => { const x = 42 + index * 225; return <g key={item.name}><rect x={x} y="44" width="190" height="210" rx="16" className="fill-white stroke-indigo-200" /><rect x={x} y="44" width="190" height="50" rx="16" className="fill-indigo-100" /><Label text={item.name} x={x + 95} y="70" max={21} className="fill-indigo-950 text-[13px] font-semibold" /><Label text={item.definition} x={x + 95} y="165" max={26} className="fill-slate-700 text-[12px]" /></g>; })}</Frame>;
+  if (spec.kind === 'process') return <Frame title={spec.plan.topic} description="Steps in explicit source order."><defs><marker id="visual-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" className="fill-indigo-500" /></marker></defs>{spec.steps.map((item, index) => { const width = Math.min(190, (640 - (spec.steps.length - 1) * 22) / spec.steps.length); const x = 40 + index * (width + 22); return <g key={`${index}-${item}`}><rect x={x} y="84" width={width} height="132" rx="16" className="fill-white stroke-slate-300" /><circle cx={x + 24} cy="108" r="13" className="fill-indigo-100" /><text x={x + 24} y="113" textAnchor="middle" className="fill-indigo-900 text-[12px] font-semibold">{index + 1}</text><Label text={item} x={x + width / 2} y="158" max={Math.max(14, Math.floor(width / 7))} className="fill-slate-800 text-[12px]" />{index < spec.steps.length - 1 && <path d={`M${x + width + 3} 150 H${x + width + 17}`} className="stroke-indigo-500" strokeWidth="2" markerEnd="url(#visual-arrow)" />}</g>; })}</Frame>;
+  if (spec.kind === 'linear') { const ox = 360; const oy = 150; const scale = 28; const point = (x: number) => `${ox + x * scale},${oy - (spec.slope * x + spec.intercept) * scale}`; return <Frame title={spec.plan.topic} description={`Exact plot of ${spec.formula}.`}>{[-5, -3, -1, 1, 3, 5].map((n) => <g key={n}><path d={`M${ox + n * scale} 46 V254`} className="stroke-slate-200" /><path d={`M220 ${oy - n * scale} H500`} className="stroke-slate-200" /></g>)}<path d="M220 150 H505 M360 258 V42" className="stroke-slate-600" strokeWidth="2" /><text x="490" y="140" className="fill-slate-600 text-[13px]">x</text><text x="372" y="56" className="fill-slate-600 text-[13px]">y</text><path d={`M${point(-5)} L${point(5)}`} className="stroke-indigo-600" strokeWidth="4" strokeLinecap="round" /><rect x="42" y="42" width="138" height="42" rx="12" className="fill-white stroke-indigo-200" /><Label text={spec.formula} x="111" y="68" max={20} className="fill-indigo-950 text-[13px] font-semibold" /></Frame>; }
+  if (spec.kind === 'fraction') { const cx = 360; const cy = 150; const r = 92; const point = (d: number) => `${cx + r * Math.cos((d - 90) * Math.PI / 180)} ${cy + r * Math.sin((d - 90) * Math.PI / 180)}`; return <Frame title={spec.plan.topic} description={`${spec.numerator} of ${spec.denominator} equal parts are shaded.`}>{Array.from({ length: spec.denominator }, (_, index) => <path key={index} d={`M${cx} ${cy} L${point(index * 360 / spec.denominator)} A${r} ${r} 0 0 1 ${point((index + 1) * 360 / spec.denominator)} Z`} className={index < spec.numerator ? 'fill-indigo-500 stroke-white' : 'fill-slate-100 stroke-white'} />)}<text x={cx} y="160" textAnchor="middle" className="fill-white text-[28px] font-bold">{spec.numerator}/{spec.denominator}</text><Label text="equal parts of one whole" x={cx} y="270" max={32} className="fill-slate-600 text-[13px]" /></Frame>; }
+  if (spec.kind === 'water-cycle') { const locations = [[360, 58], [590, 150], [360, 242], [130, 150]]; return <Frame title={spec.plan.topic} description="Conceptual cycle of named stages."><defs><marker id="cycle-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" className="fill-indigo-500" /></marker></defs>{spec.stages.map((item, index) => { const [x, y] = locations[index]; const [nx, ny] = locations[(index + 1) % spec.stages.length]; return <g key={item}><path d={`M${x + (nx - x) * .22} ${y + (ny - y) * .22} Q360 150 ${x + (nx - x) * .78} ${y + (ny - y) * .78}`} fill="none" className="stroke-indigo-400" strokeWidth="2" markerEnd="url(#cycle-arrow)" /><circle cx={x} cy={y} r="42" className="fill-white stroke-sky-300" /><Label text={item} x={x} y={y + 4} max={14} className="fill-slate-800 text-[12px] font-semibold" /></g>; })}</Frame>; }
+  return <Frame title={spec.plan.topic} description="Photosynthesis inputs and outputs named in the lesson."><defs><marker id="photo-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" className="fill-emerald-600" /></marker></defs><path d="M355 226 C245 165 280 65 445 66 C447 170 415 212 355 226 Z" className="fill-emerald-300 stroke-emerald-700" strokeWidth="3" />{['Sunlight', 'Carbon dioxide', 'Water'].map((item, index) => <g key={item}><rect x="44" y={54 + index * 68} width="150" height="44" rx="12" className="fill-white stroke-emerald-200" /><Label text={item} x="119" y={78 + index * 68} max={18} className="fill-slate-800 text-[12px] font-semibold" /><path d={`M194 ${76 + index * 68} H292`} className="stroke-emerald-600" strokeWidth="2" markerEnd="url(#photo-arrow)" /></g>)}{['Glucose', 'Oxygen'].map((item, index) => <g key={item}><rect x="526" y={82 + index * 78} width="150" height="44" rx="12" className="fill-white stroke-emerald-200" /><Label text={item} x="601" y={106 + index * 78} max={18} className="fill-slate-800 text-[12px] font-semibold" /><path d={`M438 ${104 + index * 65} H526`} className="stroke-emerald-600" strokeWidth="2" markerEnd="url(#photo-arrow)" /></g>)}</Frame>;
 }
-
-function SvgLabel({ text, x, y, maxCharacters = 24, lineHeight = 18, maxLines = 4, className = '' }: {
-  text: string;
-  x: number;
-  y: number;
-  maxCharacters?: number;
-  lineHeight?: number;
-  maxLines?: number;
-  className?: string;
-}) {
-  return (
-    <text x={x} y={y} textAnchor="middle" className={className}>
-      {wrapText(text, maxCharacters).slice(0, maxLines).map((line, index) => (
-        <tspan key={`${index}-${line}`} x={x} dy={index === 0 ? 0 : lineHeight}>
-          {line}
-        </tspan>
-      ))}
-    </text>
-  );
-}
-
-const boxClass = 'fill-white stroke-indigo-300';
-const labelClass = 'fill-slate-800 text-[14px] font-medium';
-
-function ArchitectureDiagram({ diagram }: { diagram: Extract<VisualDiagram, { kind: 'architecture' }> }) {
-  return (
-    <svg viewBox="0 0 720 230" role="img" aria-labelledby="learning-visual-title learning-visual-desc" className="h-auto w-full">
-      <title id="learning-visual-title">{diagram.title}</title>
-      <desc id="learning-visual-desc">
-        A non-directional list of cloud services named in the lesson. No relationships between components are inferred.
-      </desc>
-      <defs>
-        <marker id="cloud-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 z" className="fill-indigo-500" />
-        </marker>
-      </defs>
-      <rect x="28" y="80" width="140" height="64" rx="14" className={boxClass} />
-      <SvgLabel text="Internet" x={98} y={118} className={labelClass} />
-      <path d="M168 112 H215" stroke="currentColor" strokeWidth="2" className="text-indigo-500" markerEnd="url(#cloud-arrow)" />
-      <rect x="226" y="28" width="466" height="174" rx="18" className="fill-indigo-50 stroke-indigo-200" />
-      <SvgLabel text="Cloud services named in the lesson" x={459} y={56} className="fill-indigo-900 text-[15px] font-semibold" />
-      {diagram.components.map((component, index) => {
-        const column = index % 3;
-        const row = Math.floor(index / 3);
-        const x = 248 + column * 143;
-        const y = 76 + row * 58;
-        return (
-          <g key={component}>
-            <rect x={x} y={y} width="128" height="42" rx="10" className="fill-white stroke-slate-300" />
-            <SvgLabel text={component} x={x + 64} y={y + 25} maxCharacters={18} className={labelClass} />
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function ComparisonDiagram({ diagram }: { diagram: Extract<VisualDiagram, { kind: 'comparison' }> }) {
-  const columnWidth = 720 / diagram.models.length;
-  const descriptions = diagram.models.map((model) => wrapText(model.definition, 29));
-  const diagramHeight = Math.max(250, 104 + Math.max(...descriptions.map((lines) => lines.length)) * 16);
-  return (
-    <svg viewBox={`0 0 720 ${diagramHeight}`} role="img" aria-labelledby="learning-visual-title learning-visual-desc" className="h-auto w-full">
-      <title id="learning-visual-title">{diagram.title}</title>
-      <desc id="learning-visual-desc">
-        Side-by-side definitions of the IaaS, PaaS, and SaaS models, taken from the lesson content.
-      </desc>
-      {diagram.models.map((model, index) => {
-        const x = index * columnWidth + 8;
-        const center = x + (columnWidth - 16) / 2;
-        return (
-          <g key={model.name}>
-            <rect x={x} y="8" width={columnWidth - 16} height={diagramHeight - 16} rx="14" className={boxClass} />
-            <SvgLabel text={model.name} x={center} y={34} maxCharacters={23} className="fill-indigo-800 text-[14px] font-semibold" />
-            <line x1={x + 18} y1="78" x2={x + columnWidth - 34} y2="78" className="stroke-slate-200" />
-            <SvgLabel
-              text={model.definition}
-              x={center}
-              y={101}
-              maxCharacters={29}
-              lineHeight={16}
-              maxLines={Math.ceil((diagramHeight - 120) / 16)}
-              className="fill-slate-700 text-[11px]"
-            />
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function ProcessDiagram({ diagram }: { diagram: Extract<VisualDiagram, { kind: 'process' }> }) {
-  const count = diagram.steps.length;
-  const cardWidth = Math.min(160, 650 / count);
-  const gap = (650 - cardWidth * count) / (count - 1);
-  const start = 35;
-  return (
-    <svg viewBox="0 0 720 190" role="img" aria-labelledby="learning-visual-title learning-visual-desc" className="h-auto w-full">
-      <title id="learning-visual-title">{diagram.title}</title>
-      <desc id="learning-visual-desc">A sequence of {count} numbered steps, in the same order as the source text.</desc>
-      <defs>
-        <marker id="process-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 z" className="fill-indigo-500" />
-        </marker>
-      </defs>
-      {diagram.steps.map((step, index) => {
-        const x = start + index * (cardWidth + gap);
-        return (
-          <g key={`${index}-${step}`}>
-            <rect x={x} y="46" width={cardWidth} height="98" rx="14" className={boxClass} />
-            <circle cx={x + 22} cy="69" r="12" className="fill-indigo-100" />
-            <text x={x + 22} y="74" textAnchor="middle" className="fill-indigo-800 text-[12px] font-semibold">{index + 1}</text>
-            <SvgLabel text={step} x={x + cardWidth / 2} y={99} maxCharacters={Math.max(14, Math.floor(cardWidth / 7))} lineHeight={16} className="fill-slate-800 text-[12px]" />
-            {index < count - 1 && (
-              <path
-                d={`M${x + cardWidth + 3} 95 H${x + cardWidth + gap - 5}`}
-                stroke="currentColor"
-                strokeWidth="2"
-                className="text-indigo-500"
-                markerEnd="url(#process-arrow)"
-              />
-            )}
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function FunctionDiagram({ diagram }: { diagram: Extract<VisualDiagram, { kind: 'function' }> }) {
-  return (
-    <svg viewBox="0 0 720 170" role="img" aria-labelledby="learning-visual-title learning-visual-desc" className="h-auto w-full">
-      <title id="learning-visual-title">{diagram.title}</title>
-      <desc id="learning-visual-desc">The source formula is shown as a rule connecting an input to an output; no sample values are assumed.</desc>
-      <defs>
-        <marker id="function-arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-          <path d="M0,0 L8,4 L0,8 z" className="fill-indigo-500" />
-        </marker>
-      </defs>
-      <rect x="25" y="50" width="140" height="64" rx="14" className={boxClass} />
-      <SvgLabel text="Input" x={95} y={88} className={labelClass} />
-      <path d="M165 82 H245" stroke="currentColor" strokeWidth="2" className="text-indigo-500" markerEnd="url(#function-arrow)" />
-      <rect x="258" y="40" width="205" height="84" rx="14" className="fill-indigo-50 stroke-indigo-300" />
-      <SvgLabel text={diagram.formula} x={360} y={88} maxCharacters={27} className="fill-indigo-900 text-[14px] font-semibold" />
-      <path d="M463 82 H543" stroke="currentColor" strokeWidth="2" className="text-indigo-500" markerEnd="url(#function-arrow)" />
-      <rect x="555" y="50" width="140" height="64" rx="14" className={boxClass} />
-      <SvgLabel text="Output" x={625} y={88} className={labelClass} />
-    </svg>
-  );
-}
-
-export const LearningVisual: React.FC<{ artifact: StudyArtifact }> = ({ artifact }) => {
-  const diagram = selectLearningVisual(artifact);
-  if (!diagram) return null;
-
-  return (
-    <figure className="my-8 overflow-hidden rounded-xl border border-indigo-100 bg-white">
-      <figcaption className="border-b border-indigo-100 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-900">{diagram.title}</h2>
-        <p className="mt-1 text-xs leading-5 text-slate-600">
-          {diagram.kind === 'architecture' && 'Shows services named in the lesson; component relationships are not inferred.'}
-          {diagram.kind === 'comparison' && 'Definitions are drawn from this lesson and shown side by side.'}
-          {diagram.kind === 'process' && 'The steps follow the order given in the source.'}
-          {diagram.kind === 'function' && 'The source formula is shown without adding example values.'}
-        </p>
-      </figcaption>
-      <div className="overflow-x-auto p-3 sm:p-5">
-        <div className="min-w-[560px]">
-          {diagram.kind === 'architecture' && <ArchitectureDiagram diagram={diagram} />}
-          {diagram.kind === 'comparison' && <ComparisonDiagram diagram={diagram} />}
-          {diagram.kind === 'process' && <ProcessDiagram diagram={diagram} />}
-          {diagram.kind === 'function' && <FunctionDiagram diagram={diagram} />}
-        </div>
-      </div>
-      <p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-500">
-        MicroDo-generated diagram · Source: {diagram.source}
-      </p>
-    </figure>
-  );
-};
+function description(spec: LearningVisualSpec) { if (spec.kind === 'linear') return 'Plots the parsed equation with calculation-backed coordinates.'; if (spec.kind === 'fraction') return 'Shows equal parts; shaded parts match the source fraction.'; if (spec.kind === 'process') return 'Preserves the source’s explicit numbered sequence.'; if (spec.kind === 'architecture') return 'Groups named components without implying technical relationships.'; if (spec.kind === 'comparison') return 'Places source-grounded definitions in a parallel comparison.'; return 'Uses only stages, inputs, and outputs grounded in the lesson.'; }
+export const LearningVisual: React.FC<{ artifact: StudyArtifact }> = ({ artifact }) => { const spec = useMemo(() => selectLearningVisual(artifact), [artifact]); const [expanded, setExpanded] = useState(false); if (!spec || !validateLearningVisual(spec)) return null; const heading = `${spec.plan.mainConcept} visual`; return <><figure className="my-8 overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-sm"><figcaption className="flex items-start justify-between gap-4 border-b border-indigo-100 px-4 py-3 sm:px-5"><div><p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">MicroDo-generated {spec.plan.visualType.replace('-', ' ')}</p><h2 className="mt-1 text-base font-semibold text-slate-900">{spec.plan.mainConcept}</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-600">{description(spec)}</p></div><button type="button" onClick={() => setExpanded(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label={`Open full-size ${heading}`}><Maximize2 className="h-3.5 w-3.5" />Expand</button></figcaption><div className="p-3 sm:p-5"><Artwork spec={spec} /></div><p className="border-t border-slate-100 px-4 py-2 text-[11px] text-slate-500">MicroDo-generated structured visual · Based on {spec.plan.source}</p></figure>{expanded && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-label={heading} onMouseDown={(event) => { if (event.target === event.currentTarget) setExpanded(false); }}><div className="max-h-full w-full max-w-5xl overflow-auto rounded-2xl bg-white p-4 shadow-2xl sm:p-6"><div className="mb-4 flex items-center justify-between gap-4"><div><p className="text-xs font-medium text-indigo-700">MicroDo-generated structured visual</p><h2 className="text-lg font-semibold text-slate-950">{spec.plan.mainConcept}</h2></div><button type="button" onClick={() => setExpanded(false)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Close full-size visual"><X className="h-5 w-5" /></button></div><Artwork spec={spec} /><p className="mt-3 text-xs leading-5 text-slate-600">{spec.plan.reasonUseful} Source: {spec.plan.source}.</p></div></div>}</>; };
