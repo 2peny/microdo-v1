@@ -1,0 +1,22 @@
+# Firebase SQL Connect service configuration for MicroDo.
+#
+# This repository has no provisioned SQL Connect service yet (verified October 28,
+# 2026). Before deployment, provision the Cloud SQL for PostgreSQL instance and
+# SQL Connect service in Firebase Console or with `firebase init dataconnect`, then
+# replace the three values below with the exact values Firebase creates.
+#
+# Keep COMPATIBLE for production data: SQL Connect will not propose destructive
+# drops merely because an older table or column is not present in this schema.
+specVersion: v1
+serviceId: microdo
+location: us-central1
+schema:
+  source: schema
+  datasource:
+    postgresql:
+      database: microdo
+      cloudSql:
+        instanceId: microdo-postgres
+        schemaValidation: COMPATIBLE
+connectorDirs:
+  - connector

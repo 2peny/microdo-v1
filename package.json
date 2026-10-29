@@ -8,7 +8,11 @@
     "start": "node server.js",
     "dev": "vite",
     "lint": "tsc --noEmit",
-    "deploy:firestore-rules": "npx firebase-tools deploy --only firestore:ai-studio-nestedflowcarddi-d8e66fb2-a0d3-4a1e-955c-c37cece51e93 --project gen-lang-client-0814085166"
+    "deploy:firestore-rules": "npx firebase-tools deploy --only firestore:ai-studio-nestedflowcarddi-d8e66fb2-a0d3-4a1e-955c-c37cece51e93 --project gen-lang-client-0814085166",
+    "sqlconnect:diff": "npx firebase-tools dataconnect:sql:diff --project gen-lang-client-0814085166 --service microdo --location us-central1",
+    "sqlconnect:migrate": "npx firebase-tools dataconnect:sql:migrate --project gen-lang-client-0814085166 --service microdo --location us-central1",
+    "sqlconnect:sdk": "npx firebase-tools dataconnect:sdk:generate --project gen-lang-client-0814085166",
+    "deploy:sqlconnect": "npx firebase-tools deploy --only dataconnect --project gen-lang-client-0814085166"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

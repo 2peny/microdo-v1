@@ -1,0 +1,6 @@
+connectorId: workspace
+generate:
+  javascriptSdk:
+    outputDir: ../../src/dataconnect/generated
+    package: "@microdo/dataconnect"
+    packageJsonDir: ../..

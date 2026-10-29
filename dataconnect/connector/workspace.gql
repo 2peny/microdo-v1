@@ -1,0 +1,46 @@
+# The browser never accepts a UID parameter for any operation. SQL Connect obtains
+# identity from the Firebase ID token and all keys use auth.uid server-side.
+
+query GetMyWorkspace @auth(level: USER_EMAIL_VERIFIED) {
+  workspaceSnapshot(key: { userUid_expr: "auth.uid" }) {
+    courses
+    completedArtifactIds
+    continuePosition
+    schemaVersion
+    updatedAt
+  }
+}
+
+mutation UpsertMyProfile(
+  $email: String!
+  $displayName: String!
+  $username: String
+  $archetype: String
+  $majorOrFocus: String
+) @auth(level: USER_EMAIL_VERIFIED) {
+  user_upsert(data: {
+    uid_expr: "auth.uid"
+    email: $email
+    displayName: $displayName
+    username: $username
+    archetype: $archetype
+    majorOrFocus: $majorOrFocus
+    updatedAt_expr: "request.time"
+  })
+}
+
+mutation UpsertMyWorkspace(
+  $courses: Any!
+  $completedArtifactIds: Any!
+  $continuePosition: Any
+  $schemaVersion: Int!
+) @auth(level: USER_EMAIL_VERIFIED) {
+  workspaceSnapshot_upsert(data: {
+    userUid_expr: "auth.uid"
+    courses: $courses
+    completedArtifactIds: $completedArtifactIds
+    continuePosition: $continuePosition
+    schemaVersion: $schemaVersion
+    updatedAt_expr: "request.time"
+  })
+}

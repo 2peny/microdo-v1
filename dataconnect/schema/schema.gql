@@ -1,0 +1,224 @@
+# MicroDo's production application-data model.
+#
+# Firebase Authentication remains the identity/password authority. User.uid is the
+# Firebase Auth UID; this schema never stores passwords, Auth refresh tokens, or
+# Firebase ID tokens. Original uploaded files belong in Cloud Storage. This model
+# stores their metadata and the learning data derived from them.
+
+enum PlatformRole {
+  LEARNER
+  PARENT_GUARDIAN
+  INSTRUCTOR
+  ADMIN
+}
+
+enum CourseMembershipRole {
+  OWNER
+  LEARNER
+  INSTRUCTOR
+  GUARDIAN
+}
+
+enum ArtifactType {
+  OVERVIEW
+  EXAMPLES
+  QUIZ
+}
+
+enum MasteryState {
+  NOT_STARTED
+  LEARNING
+  NEEDS_PRACTICE
+  PROFICIENT
+  MASTERED
+}
+
+enum ProcessingJobStage {
+  QUEUED
+  READING_FILE
+  DETECTING_STRUCTURE
+  AWAITING_REVIEW
+  GENERATING_CURRICULUM
+  READY
+  FAILED
+}
+
+type User @table(key: "uid") {
+  uid: String!
+  email: String! @unique
+  displayName: String!
+  username: String
+  archetype: String
+  majorOrFocus: String
+  primaryRole: PlatformRole! @default(value: LEARNER)
+  isActive: Boolean! @default(value: true)
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type UserRole @table(key: ["user", "role"]) {
+  user: User!
+  role: PlatformRole!
+  grantedAt: Timestamp! @default(expr: "request.time")
+}
+
+type Course @table {
+  owner: User!
+  title: String!
+  discipline: String!
+  quote: String
+  subquote: String
+  archivedAt: Timestamp
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type CourseMembership @table(key: ["course", "user"]) {
+  course: Course!
+  user: User!
+  role: CourseMembershipRole!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type UploadedDocument @table {
+  owner: User!
+  course: Course
+  originalFilename: String!
+  contentType: String!
+  byteSize: Int64!
+  storageObjectPath: String!
+  checksumSha256: String
+  extractedText: String
+  pageCount: Int
+  createdAt: Timestamp! @default(expr: "request.time")
+  deletedAt: Timestamp
+}
+
+type Module @table {
+  course: Course!
+  sourceDocument: UploadedDocument
+  ordinal: Int!
+  prefix: String!
+  title: String!
+  sourceChapterText: String
+  courseCode: String!
+  estimatedHours: String!
+  summary: String!
+  syllabusFilename: String
+  roadmapHeading: String
+  roadmapDescription: String
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type Topic @table {
+  module: Module!
+  ordinal: Int!
+  name: String!
+  objective: String!
+  sourceReference: Any
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type LessonArtifact @table {
+  topic: Topic!
+  ordinal: Int!
+  artifactType: ArtifactType!
+  path: String!
+  title: String!
+  tagline: String!
+  overviewMarkdown: String
+  workedExamplesMarkdown: String
+  sourceText: String
+  quizData: Any
+  structuredLesson: Any
+  sourceReference: Any
+  createdAt: Timestamp! @default(expr: "request.time")
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type ArtifactCompletion @table(key: ["user", "artifact"]) {
+  user: User!
+  artifact: LessonArtifact!
+  completedAt: Timestamp! @default(expr: "request.time")
+}
+
+type TopicMastery @table(key: ["user", "topic"]) {
+  user: User!
+  topic: Topic!
+  state: MasteryState! @default(value: NOT_STARTED)
+  score: Int! @default(value: 0)
+  attemptsCount: Int! @default(value: 0)
+  correctCount: Int! @default(value: 0)
+  incorrectCount: Int! @default(value: 0)
+  consecutiveCorrect: Int! @default(value: 0)
+  lastAssessedAt: Timestamp
+  lastRevisionAt: Timestamp
+  nextRevisionDue: Timestamp
+  revisionIntervalDays: Int! @default(value: 1)
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type QuizAttempt @table {
+  user: User!
+  topic: Topic!
+  artifact: LessonArtifact
+  selectedOptionIndex: Int!
+  isCorrect: Boolean!
+  timeSpentSeconds: Int
+  isRetry: Boolean! @default(value: false)
+  attemptNumber: Int!
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+type LearningPosition @table(key: "user") {
+  user: User!
+  course: Course!
+  module: Module!
+  topic: Topic!
+  artifact: LessonArtifact
+  progressPercent: Int! @default(value: 0)
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type StudyGoal @table(key: "user") {
+  user: User!
+  weeklyLessonsTarget: Int! @default(value: 3)
+  studyDaysTarget: Int! @default(value: 3)
+  targetMasteryLevel: MasteryState! @default(value: PROFICIENT)
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
+
+type ProcessingJob @table {
+  owner: User!
+  sourceDocument: UploadedDocument
+  stage: ProcessingJobStage!
+  errorMessage: String
+  retryCount: Int! @default(value: 0)
+  detectedChaptersCount: Int! @default(value: 0)
+  estimatedCostUsd: Float! @default(value: 0)
+  startedAt: Timestamp! @default(expr: "request.time")
+  completedAt: Timestamp
+}
+
+type AuditEvent @table {
+  actor: User
+  action: String!
+  entityType: String!
+  entityId: String
+  metadata: Any
+  createdAt: Timestamp! @default(expr: "request.time")
+}
+
+# Temporary bridge for moving browser-local workspaces to Cloud SQL without data
+# loss. It is UID-keyed and deliberately contains no cross-user access path.
+# Retire it after the UI exclusively reads/writes normalized entities above.
+type WorkspaceSnapshot @table(key: "user") {
+  user: User!
+  courses: Any!
+  completedArtifactIds: Any!
+  continuePosition: Any
+  schemaVersion: Int! @default(value: 1)
+  updatedAt: Timestamp! @default(expr: "request.time")
+}
